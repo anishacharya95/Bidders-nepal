@@ -170,11 +170,11 @@ CENTRAL_SOURCES: tuple[SourceSpec, ...] = (
     ),
     SourceSpec(
         "bolpatra-egp", "Nepal e-GP (Bolpatra)", "नेपाल सरकार इ-जीपी",
-        "Government of Nepal e-GP portal", "egp_portal", "central",
-        None, None, "https://bolpatra.gov.np/", None,
-        "manual", 1, discovery_status="requires_authorization",
-        requires_authorization=True, active=False,
-        notes="Official e-GP portal. Notice/bid access requires a bidder session; not scraped.",
+        "Public Procurement Monitoring Office (PPMO)", "egp_portal", "central",
+        None, None, "https://bolpatra.gov.np/", "https://bolpatra.gov.np/projects",
+        "generic_html", 1, discovery_status="discovered",
+        requires_authorization=False, active=True,
+        notes="Official public e-GP published-project listing. Public listing scan only; bidder login and restricted bid actions are not accessed.",
     ),
     SourceSpec(
         "bolpatranepal-com", "Bolpatra Nepal (third-party portal)", "बोलपत्र नेपाल",
