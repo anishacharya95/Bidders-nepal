@@ -216,8 +216,6 @@ def _duplicate(db: Session, url: str, notice: str | None, title: str, organizati
         return True
     if notice:
         # Cross-source notice numbers are the strongest duplicate key.
-        for row in db.query(Tender.id).filter(Tender.notice_number.isnot(None)).all():
-            pass
         if db.query(Tender).filter(Tender.notice_number.ilike(notice)).first():
             return True
     # Conservative fallback only when both title and organization are known.
