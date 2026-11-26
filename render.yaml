@@ -1,0 +1,29 @@
+databases:
+  - name: bidders-nepal-db
+    plan: free
+    databaseName: bidders_nepal
+    user: bidders_nepal_user
+
+services:
+  - type: web
+    name: bidders-nepal-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bidders-nepal-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*"
