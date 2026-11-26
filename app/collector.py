@@ -1,16 +1,17 @@
 """Conservative discovery adapter for public PPMO notice pages.
 
-Discovered pages are candidates only: all records enter the pending review queue.
-No login, CAPTCHA, private endpoint, or browser automation is used.
+This adapter discovers candidate links only. It does not claim PPMO is the
+procuring entity, and every candidate remains pending until an admin checks
+the original notice. No login, CAPTCHA bypass, private API, or protected
+document download is performed.
 """
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import re
 from datetime import datetime, timezone
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,10 +29,10 @@ ALLOWED_HOSTS = {"ppmo.gov.np", "www.ppmo.gov.np"}
 KEYWORDS = (
     "invitation for bid", "invitation for electronic", "tender", "quotation",
     "expression of interest", "request for proposal", "bid notice",
-    "बोलपत्र", "दरभाउपत्र", "सिलबन्दी"
+    "बोलपत्र", "दरभाउपत्र", "सिलबन्दी",
 )
 SKIP_WORDS = ("login", "register", "contact", "privacy", "career", "result", "blacklist")
-USER_AGENT = "BiddersNepalNoticeBot/1.0 (+https://bidders-nepal-api.onrender.com; public notice discovery)"
+USER_AGENT = "BiddersNepalNoticeBot/1.1 (+https://bidders-nepal-api.onrender.com; public notice discovery)"
 
 
 def _allowed(url: str) -> bool:
@@ -42,7 +43,14 @@ def _allowed(url: str) -> bool:
 def _sources() -> list[str]:
     configured = os.getenv("TENDER_SOURCE_URLS", "")
     sources = [x.strip() for x in configured.split(",") if x.strip()] if configured else DEFAULT_SOURCES
-    return [url for url in sources if _allowed(url)]
+    return list(dict.fromkeys(url for url in sources if _allowed(url)))
+
+
+def _canonical_url(url: str) -> str:
+    """Normalize harmless URL differences without dropping meaningful query parameters."""
+    parsed = urlparse(url)
+    return urlunparse((parsed.scheme.lower(), (parsed.hostname or "").lower(),
+                       parsed.path.rstrip("/") or "/", parsed.params, parsed.query, ""))
 
 
 def _looks_like_notice(text: str, href: str) -> bool:
@@ -62,11 +70,46 @@ def _notice_number(text: str) -> str | None:
     return None
 
 
+def _category(text: str) -> str:
+    value = text.lower()
+    if any(x in value for x in ("consultancy", "consultant", "expression of interest", "eoi")):
+        return "Consultancy"
+    if any(x in value for x in ("goods", "supply", "procurement of", "purchase")):
+        return "Goods"
+    if any(x in value for x in ("construction", "road", "building", "bridge", "works")):
+        return "Works"
+    if any(x in value for x in ("service", "maintenance", "cleaning")):
+        return "Services"
+    return "Other"
+
+
+def _deadline(text: str) -> datetime | None:
+    """Parse only unambiguous dates; leave other formats for human review."""
+    patterns = (
+        r"\b(20\d{2}-\d{2}-\d{2})\b",
+        r"\b(\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2})\b",
+        r"\b([A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2})\b",
+    )
+    formats = ("%Y-%m-%d", "%d %B %Y", "%d %b %Y", "%B %d, %Y", "%B %d %Y", "%b %d, %Y", "%b %d %Y")
+    for pattern in patterns:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if not match:
+            continue
+        raw = re.sub(r"\s+", " ", match.group(1)).replace(",", "")
+        for fmt in formats:
+            try:
+                return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+    return None
+
+
 def collect_public_notices(db: Session) -> dict:
     """Fetch allowlisted public pages and insert unseen candidates as pending."""
     discovered = inserted = duplicates = failed = 0
     checked_at = datetime.now(timezone.utc)
-    for source_url in _sources():
+    sources = _sources()
+    for source_url in sources:
         try:
             response = requests.get(
                 source_url,
@@ -81,29 +124,34 @@ def collect_public_notices(db: Session) -> dict:
                 continue
             soup = BeautifulSoup(response.text, "html.parser")
             for anchor in soup.select("a[href]"):
-                title = " ".join(anchor.get_text(" ", strip=True).split())
-                target = urljoin(response.url, anchor.get("href", ""))
-                if not title or len(title) < 12 or len(title) > 500 or not _allowed(target):
+                anchor_text = " ".join(anchor.get_text(" ", strip=True).split())
+                parent_text = " ".join(anchor.parent.get_text(" ", strip=True).split()) if anchor.parent else ""
+                context = " ".join(dict.fromkeys(x for x in (anchor_text, parent_text) if x))
+                target = _canonical_url(urljoin(response.url, anchor.get("href", "")))
+                if not anchor_text or len(anchor_text) < 12 or len(anchor_text) > 500 or not _allowed(target):
                     continue
-                if not _looks_like_notice(title, target):
+                if not _looks_like_notice(context, target):
                     continue
                 discovered += 1
-                fingerprint = hashlib.sha256(target.rstrip("/").lower().encode()).hexdigest()
                 existing = db.query(Tender).filter(Tender.source_url == target).first()
                 if existing:
                     duplicates += 1
                     continue
-                notice = _notice_number(title)
+                notice = _notice_number(context)
                 if notice and db.query(Tender).filter(Tender.notice_number == notice).first():
                     duplicates += 1
                     continue
+                deadline = _deadline(context)
                 db.add(Tender(
-                    title=title[:500],
-                    organization_name="Public Procurement Monitoring Office (PPMO)",
+                    title=anchor_text[:500],
+                    organization_name="Not identified - admin review required",
                     notice_number=notice,
-                    category="Other",
-                    description="Automatically discovered public notice link. Please review the original notice and complete missing tender details.",
-                    source_name="PPMO public website",
+                    category=_category(context),
+                    description=("Discovered on a public PPMO page. The procuring entity, "
+                                  "deadline, eligibility and documents must be checked against "
+                                  "the original notice before verification."),
+                    deadline=deadline,
+                    source_name="PPMO public website (discovery source)",
                     source_url=target,
                     verification_status="pending",
                     status="open",
@@ -116,10 +164,10 @@ def collect_public_notices(db: Session) -> dict:
             log.warning("Collector failed for %s: %s", source_url, exc)
     return {
         "checked_at": checked_at.isoformat(),
-        "sources_checked": len(_sources()),
+        "sources_checked": len(sources),
         "candidates_found": discovered,
         "inserted_pending_review": inserted,
         "duplicates_skipped": duplicates,
         "source_errors": failed,
-        "message": "Candidates are not public until an admin verifies them.",
+        "message": "Discovered links are candidates, not confirmed tenders. Verify the original notice before publication.",
     }
