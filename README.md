@@ -305,6 +305,21 @@ moved or removed a file is reported as `missing`/`restricted` so the app can sho
 message instead of a blank viewer. The publisher's original link is always preserved; files
 are not mirrored to this service.
 
+## Official e-GP coverage
+
+The official portal (`https://bolpatra.gov.np`) is registered as its own source and kept
+distinct from third-party listing sites. It currently yields **no collectable notices**:
+the public pages are a JavaScript shell (`<div id="root">`, ~700 bytes) that loads notices
+from the portal's own `/api/v1/tenders` endpoints, and `robots.txt` disallows `/api`. The
+collector therefore reports the source as reachable but without notices
+(`discovery_status=no_notices`) instead of claiming coverage, and it never bypasses that
+restriction. The JSON API support exists, so if the publisher allows API access (or adds
+server-rendered pages), e-GP records and their bidding documents/BOQ can be collected by
+registering the allowed URL — no new collector is needed.
+
+A source is only marked `active` after a scan returns at least one notice; a reachable
+page that returns none is marked `no_notices`.
+
 ## Deployment
 
 `render.yaml` provisions the Postgres database and web service. The start command runs

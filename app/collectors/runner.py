@@ -431,7 +431,9 @@ def run_collection(
                 source.consecutive_failures = 0
                 source.notices_found = source_notices
                 source.documents_found = source_docs
-                source.discovery_status = "active"
+                # A reachable page that yields no notices is not a working source:
+                # say so instead of claiming coverage.
+                source.discovery_status = "active" if source_notices > 0 else "no_notices"
                 scan.status = "ok"
                 scan.items_found = source_notices
                 scan.documents_found = source_docs

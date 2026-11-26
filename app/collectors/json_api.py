@@ -49,23 +49,25 @@ URL_KEYS = (
 )
 ORG_KEYS = (
     "organization_name", "organization", "organisation", "buyer_name", "buyer",
-    "agency", "department", "office", "entity", "publisher",
+    "agency", "department", "office", "office_name", "entity", "publisher",
 )
 NUMBER_KEYS = (
     "notice_number", "notice_no", "reference_number", "reference_no", "ref_no",
-    "tender_number", "bid_number",
+    "tender_number", "bid_number", "reference",
 )
-CATEGORY_KEYS = ("category", "procurement_category")
+CATEGORY_KEYS = ("category", "procurement_category", "category_name")
 PROVINCE_KEYS = ("province", "state", "province_name")
 DISTRICT_KEYS = ("district", "district_name")
 MUNICIPALITY_KEYS = ("municipality", "local_government", "palika")
 DESCRIPTION_KEYS = ("description", "summary", "details", "remarks", "scope")
-PUBLISHED_KEYS = ("published_date", "published_at", "publication_date", "published")
+PUBLISHED_KEYS = (
+    "published_date", "published_at", "publication_date", "publish_at", "published"
+)
 DEADLINE_KEYS = (
     "deadline", "closing_date", "submission_deadline", "bid_submission_deadline",
     "close_date", "deadline_date",
 )
-OPENING_KEYS = ("bid_opening_date", "opening_date", "bid_open_date")
+OPENING_KEYS = ("bid_opening_date", "opening_date", "bid_open_date", "opens_at")
 BUDGET_KEYS = ("estimated_budget_npr", "estimated_budget", "budget", "estimated_amount")
 SECURITY_KEYS = ("bid_security_npr", "bid_security", "bid_bond", "security_amount")
 ELIGIBILITY_KEYS = ("eligibility", "eligibility_criteria")
@@ -269,6 +271,9 @@ def _pagination(payload: Any) -> tuple[int, int] | None:
     if not isinstance(payload, dict):
         return None
     total = payload.get("total")
+    if not isinstance(total, int):
+        # Django REST-style APIs report the row count as ``count``.
+        total = payload.get("count")
     size = payload.get("page_size") or payload.get("per_page") or payload.get("limit")
     if not isinstance(total, int) or total <= 0 or not isinstance(size, int) or size <= 0:
         return None

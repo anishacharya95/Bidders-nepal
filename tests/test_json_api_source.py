@@ -222,3 +222,11 @@ def test_runner_ingests_json_source_end_to_end(monkeypatch, db, json_source):
         .count()
         == 1
     )
+
+
+def test_json_feed_pagination_accepts_count_key():
+    from app.collectors.json_api import _pagination
+
+    assert _pagination({"count": 40, "page_size": 20}) == (40, 20)
+    assert _pagination({"total": 5, "page_size": 5}) == (5, 5)
+    assert _pagination({"results": []}) is None

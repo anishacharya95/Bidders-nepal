@@ -174,7 +174,12 @@ CENTRAL_SOURCES: tuple[SourceSpec, ...] = (
         None, None, "https://bolpatra.gov.np/", "https://bolpatra.gov.np/projects",
         "bolpatra_egp", 1, discovery_status="discovered",
         requires_authorization=False, active=True,
-        notes="Official public e-GP published-project listing. Public listing scan only; bidder login and restricted bid actions are not accessed.",
+        notes=(
+            "Official public e-GP listing. The portal is a JavaScript app that loads notices "
+            "from its own /api endpoints, and robots.txt disallows /api, so no notice is "
+            "currently collected from this source without the publisher's permission. "
+            "Bidder login and restricted bid actions are never accessed."
+        ),
     ),
     SourceSpec(
         "bolpatranepal-com", "Bolpatra Nepal (third-party portal)", "बोलपत्र नेपाल",
