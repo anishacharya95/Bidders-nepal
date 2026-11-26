@@ -16,7 +16,7 @@ import requests
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 
-from app.models import Tender
+from app.models import Tender, CollectorSource, TenderDocument
 
 log = logging.getLogger(__name__)
 
@@ -133,6 +133,8 @@ def _discover_local_government_sites() -> list[str]:
                 parsed = urlparse(target)
                 host = (parsed.hostname or "").lower()
                 if parsed.scheme != "https" or not host or host in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+                    continue
+                if not (host == "gov.np" or host.endswith(".gov.np")):
                     continue
                 DISCOVERED_LOCAL_HOSTS.add(host)
                 discovered.append(target.split("#", 1)[0])
