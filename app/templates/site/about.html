@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head"><div><h1>About Bidders Nepal</h1><p>An independent aggregator of Nepal's public procurement notices.</p></div></div>
+<div class="wrap section prose-page">
+  <section class="panel">
+    <h2>What this platform does</h2>
+    <p>Bidders Nepal automatically discovers public tender notices published by Nepali government bodies — PPMO, ministries, departments, utilities, provincial portals and local governments — and turns them into one searchable, consistently formatted catalogue with links to the original notice and its public attachments.</p>
+    <p>The collector runs on a schedule without user interaction. Important national sources are checked every 20 minutes, a full source discovery runs daily, and local-government websites are discovered incrementally. Each run is recorded with per-source results and errors.</p>
+  </section>
+
+  <section class="panel">
+    <h2>What it does not do</h2>
+    <ul class="bullet-list">
+      <li>It does not bypass logins, CAPTCHAs or restricted portals. The official e-GP portal and third-party commercial portals are registered as requiring authorization and are not scraped.</li>
+      <li>It does not invent values. Fields the source does not publish are shown as “Not available”.</li>
+      <li>It does not claim complete coverage. {{ stats.sources.registered }} sources are registered; {{ stats.sources.scanned_successfully }} have been scanned successfully.</li>
+      <li>It is not a government service and does not accept bids. Always bid through the official portal or the agency named in the notice.</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>Current coverage</h2>
+    <dl class="detail-grid">
+      <div><dt>Tender notices</dt><dd>{{ stats.tenders.total }}</dd></div>
+      <div><dt>Open notices</dt><dd>{{ stats.tenders.open }}</dd></div>
+      <div><dt>Bid documents tracked</dt><dd>{{ stats.documents.total }}</dd></div>
+      <div><dt>Registered sources</dt><dd>{{ stats.sources.registered }}</dd></div>
+      <div><dt>Sources scanned successfully</dt><dd>{{ stats.sources.scanned_successfully }}</dd></div>
+      <div><dt>Failing sources</dt><dd>{{ stats.sources.failing }}</dd></div>
+      <div><dt>Local governments in directory</dt><dd>{{ coverage.local_governments.directory_entries }}</dd></div>
+      <div><dt>Local-government sites verified</dt><dd>{{ coverage.local_governments.website_verified }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Data and review</h2>
+    <p>Collected records are published as pending until an administrator reviews them. A pending record is flagged on every page. Verification status, first-seen and last-updated timestamps, and the full change history are exposed through the public API so clients can judge a record's freshness themselves.</p>
+    <p>Developers can use the <a href="/docs">documented JSON API</a>; the mobile app and this website use the same endpoints.</p>
+  </section>
+</div>
+{% endblock %}

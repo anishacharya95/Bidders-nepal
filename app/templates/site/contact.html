@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head"><div><h1>Contact</h1><p>Corrections, source suggestions and access questions.</p></div></div>
+<div class="wrap section prose-page">
+  <section class="panel">
+    <h2>Report an incorrect record</h2>
+    <p>Every tender page links to its original notice. If a record is wrong or outdated, check the source first — the notice itself is authoritative. Data corrections are handled by administrators in the admin review queue.</p>
+    <p>Include the tender ID shown on the detail page, the field that is wrong, and the official URL that shows the correct value.</p>
+  </section>
+  <section class="panel">
+    <h2>Suggest a source</h2>
+    <p>If a government office, municipality or project publishes tenders and is not covered yet, send its official website and the page listing its procurement notices. Only public, official sources are added; login-protected portals are recorded as requiring authorization.</p>
+  </section>
+  <section class="panel">
+    <h2>Channels</h2>
+    <ul class="plain-list">
+      <li><a href="https://github.com/anishacharya95/Bidders-nepal/issues" target="_blank" rel="noopener">Project issue tracker</a><span class="sub">Public bug reports and source suggestions</span></li>
+      <li><a href="/docs">API documentation</a><span class="sub">Endpoints, filters and response shapes</span></li>
+      <li><a href="/api/v1/coverage">Coverage report</a><span class="sub">Machine-readable source status</span></li>
+    </ul>
+  </section>
+  <section class="panel">
+    <h2>Disclaimer</h2>
+    <p>Bidders Nepal is an independent information service. It is not affiliated with, endorsed by, or acting for the Government of Nepal or any procuring entity. Verify all deadlines, amounts and eligibility requirements in the original notice before submitting a bid.</p>
+  </section>
+</div>
+{% endblock %}

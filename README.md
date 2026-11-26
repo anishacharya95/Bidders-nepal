@@ -2,11 +2,13 @@
 
 An automated Nepal public-procurement aggregation platform: a FastAPI/PostgreSQL backend
 with a polite source collector, document discovery, duplicate linking, monitoring, an
-authenticated admin dashboard, and a mobile-first Expo app.
+authenticated admin dashboard, a server-rendered public website, and a mobile-first Expo app.
 
 **Live API:** https://bidders-nepal-api.onrender.com
 **API docs:** https://bidders-nepal-api.onrender.com/docs
+**Website:** https://bidders-nepal-api.onrender.com/ (served by the same service)
 **Admin dashboard:** https://bidders-nepal-api.onrender.com/admin
+**Machine-readable index:** https://bidders-nepal-api.onrender.com/api
 **Mobile app source:** [`mobile/`](mobile/)
 
 Bidders Nepal is an independent aggregator, not a government agency. Every record links
@@ -38,11 +40,13 @@ back to the original public notice; unverified values are `null`, never invented
 ```
 app/
   api/              public.py, admin.py (JSON), admin_ui.py (Jinja dashboard), auth.py
+  web.py            public website routes (server-rendered, read-only)
   collectors/       base (HTTP policy), extraction, adapters, registry, discovery, runner
   services/         duplicates, documents, query/facets, monitoring
   data/             local_governments.json (753 units + attribution)
   templates/        admin dashboard HTML
-  static/admin.css  dashboard styling
+  templates/site/   public website HTML
+  static/           admin.css, site.css, site.js, favicon.svg
   config.py         environment-driven settings
   database.py       engine + pooling
   database_schema.py idempotent column/table bootstrap
@@ -54,14 +58,23 @@ tests/              API, registry, extraction, duplicate, runner and auth tests
 mobile/             Expo / React Native app (TypeScript)
 ```
 
+## Public website
+
+The service renders a public website at `/` from the same database and services (no sample
+data, no separate frontend build): home with live counters, latest and closing-soon lists,
+all tenders with search/filter/sort/pagination, categories, organizations, provinces and
+districts, tender detail with bid documents, source links and change history, a change-alerts
+feed, browser-local saved tenders, and about/contact pages. The JSON API is unchanged at
+`/api/v1`; `/api` returns a machine-readable index.
+
 ## Public API
 
 Base: `/api/v1`. Interactive schema at `/docs`.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /tenders/all` | Full public feed (pending + verified, rejected excluded). `page_size` ≤ 500 |
-| `GET /tenders` | Verified-only feed (`page_size` ≤ 100, default status `open`) |
+| `GET /tenders/all` | Full public feed (pending + verified, rejected excluded). `page_size` ≤ 500, `ids=1,2,3` lookup for saved lists |
+| `GET /tenders` | Public feed; all statuses by default. `verified_only=true` returns the reviewed-only feed (`page_size` ≤ 100) |
 | `GET /tenders/latest` | Newest records (`limit` ≤ 100) |
 | `GET /tenders/closing-soon` | Open notices closing within `days` (1–90) |
 | `GET /tenders/{id}` | Detail (404 for missing/rejected) |
@@ -163,6 +176,9 @@ export ADMIN_PASSWORD='a-long-password'
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
+
+The website is then at `http://127.0.0.1:8000/`, the API docs at `/docs` and the admin
+dashboard at `/admin`.
 
 Run tests (isolated SQLite, collector disabled, no outbound requests):
 

@@ -1,0 +1,23 @@
+<article class="tender-card">
+  <div class="tender-card-top">
+    <span class="tag">{{ tender.category }}</span>
+    <span class="status status-{{ tender.status }}">{{ tender.status | capitalize }}</span>
+    {% if tender.verification_status == 'verified' %}
+    <span class="verified" title="Reviewed by an administrator">Verified</span>
+    {% endif %}
+  </div>
+  <h3><a href="/tenders/{{ tender.id }}">{{ tender.title }}</a></h3>
+  <p class="org">{{ tender.organization_name }}</p>
+  <div class="meta">
+    <span>Deadline: <strong>{{ tender.deadline | datetime }}</strong>
+      {% if tender.deadline %}<em class="days">{{ tender.deadline | days_left }}</em>{% endif %}
+    </span>
+    <span>Published: {{ tender.published_date | date }}</span>
+    {% if tender.province or tender.district %}
+    <span>{{ [tender.district, tender.province] | select | join(', ') }}</span>
+    {% endif %}
+    {% if tender.documents %}
+    <span class="docs">{{ tender.documents | length }} document{{ '' if tender.documents | length == 1 else 's' }}</span>
+    {% endif %}
+  </div>
+</article>

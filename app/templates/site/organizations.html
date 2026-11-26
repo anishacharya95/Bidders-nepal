@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head">
+  <div><h1>{{ heading }}</h1><p>Public bodies that publish procurement notices, by number of collected records.</p></div>
+</div>
+<div class="wrap section">
+  <form class="inline-search" method="get" action="/organizations">
+    <input type="search" name="q" value="{{ q }}" placeholder="Find an organization…" aria-label="Search organizations">
+    <select name="province">
+      <option value="">All provinces</option>
+      {% for item in provinces %}
+      <option value="{{ item.value }}" {{ 'selected' if province == item.value else '' }}>{{ item.value }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn primary" type="submit">Filter</button>
+  </form>
+
+  {% if counts %}
+  <ul class="org-list">
+    {% for item in counts %}
+    <li>
+      <a href="/tenders?organization={{ item.value | urlencode }}{% if province %}&province={{ province | urlencode }}{% endif %}">{{ item.value }}</a>
+      <span class="org-count">{{ item.count }} notice{{ '' if item.count == 1 else 's' }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty-state"><h3>No organizations found</h3><p>Try a different search term.</p></div>
+  {% endif %}
+</div>
+{% endblock %}

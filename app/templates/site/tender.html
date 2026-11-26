@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/">Home</a> <span>/</span>
+    <a href="/tenders">Tenders</a> <span>/</span>
+    <span>{{ tender.organization_name }}</span>
+  </nav>
+
+  <header class="detail-head">
+    <div class="detail-title">
+      <div class="tender-card-top">
+        <span class="tag">{{ tender.category }}</span>
+        <span class="status status-{{ tender.status }}">{{ tender.status | capitalize }}</span>
+        {% if tender.verification_status == 'verified' %}
+        <span class="verified">Verified</span>
+        {% else %}
+        <span class="pending" title="Collected from an official source and awaiting admin review">Pending review</span>
+        {% endif %}
+        {% if tender.notice_type %}
+        <span class="notice-type">{{ tender.notice_type | replace('_', ' ') }}</span>
+        {% endif %}
+      </div>
+      <h1>{{ tender.title }}</h1>
+      <p class="detail-org">{{ tender.organization_name }}</p>
+    </div>
+    <div class="detail-actions">
+      <button class="btn save-btn" type="button" data-tender-save="{{ tender.id }}" aria-pressed="false">Save tender</button>
+      {% if tender.source_url %}
+      <a class="btn ghost" href="{{ tender.source_url }}" target="_blank" rel="noopener noreferrer nofollow">Original notice ↗</a>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if tender.verification_status != 'verified' %}
+  <div class="notice-bar">
+    <strong>Unverified record.</strong> This notice was collected automatically from a public source and has not been reviewed by an administrator. Always confirm details on the original notice before bidding.
+  </div>
+  {% endif %}
+
+  <div class="detail-layout">
+    <div class="detail-main">
+      <section class="panel">
+        <h2>Notice details</h2>
+        <dl class="detail-grid">
+          <div><dt>Tender ID</dt><dd>#{{ tender.id }}</dd></div>
+          <div><dt>Notice number</dt><dd>{{ tender.notice_number or 'Not available' }}</dd></div>
+          <div><dt>Procurement category</dt><dd>{{ tender.category }}</dd></div>
+          <div><dt>Province</dt><dd>{{ tender.province or 'Not available' }}</dd></div>
+          <div><dt>District</dt><dd>{{ tender.district or 'Not available' }}</dd></div>
+          <div><dt>Municipality</dt><dd>{{ tender.municipality or 'Not available' }}</dd></div>
+          <div><dt>Published date</dt><dd>{{ tender.published_date | date }}</dd></div>
+          <div><dt>Submission deadline</dt><dd>{{ tender.deadline | datetime }}{% if tender.deadline %} <em class="days">({{ tender.deadline | days_left }})</em>{% endif %}</dd></div>
+          <div><dt>Bid opening</dt><dd>{{ tender.bid_opening_date | datetime }}</dd></div>
+          <div><dt>Estimated budget</dt><dd>{{ tender.estimated_budget_npr | npr }}</dd></div>
+          <div><dt>Bid security</dt><dd>{{ tender.bid_security_npr | npr }}</dd></div>
+          <div><dt>Bid validity</dt><dd>{% if tender.bid_validity_days %}{{ tender.bid_validity_days }} days{% else %}Not available{% endif %}</dd></div>
+          <div><dt>Source</dt><dd>{{ tender.source_name }}</dd></div>
+          <div><dt>First seen</dt><dd>{{ tender.first_seen_at | relative }}</dd></div>
+          <div><dt>Last updated</dt><dd>{{ tender.updated_at | relative }}</dd></div>
+          <div><dt>Times observed</dt><dd>{{ tender.seen_count or 1 }}</dd></div>
+        </dl>
+      </section>
+
+      {% if tender.description %}
+      <section class="panel">
+        <h2>Description</h2>
+        <p class="prose">{{ tender.description }}</p>
+      </section>
+      {% endif %}
+
+      {% if tender.eligibility %}
+      <section class="panel">
+        <h2>Eligibility</h2>
+        <p class="prose">{{ tender.eligibility }}</p>
+      </section>
+      {% endif %}
+
+      <section class="panel" id="documents">
+        <div class="panel-head">
+          <h2>Bid documents</h2>
+          <span class="count">{{ documents | length }}</span>
+        </div>
+        {% if documents %}
+        <ul class="doc-list">
+          {% for doc in documents %}
+          <li>
+            <div class="doc-main">
+              <a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer nofollow">{{ doc.label }}</a>
+              <span class="doc-meta">
+                {{ doc.document_type | replace('_', ' ') }}
+                {% if doc.file_format %} · {{ doc.file_format }}{% endif %}
+                {% if doc.file_size_bytes %} · {{ (doc.file_size_bytes / 1024) | round | int }} KB{% endif %}
+              </span>
+            </div>
+            <span class="doc-status doc-{{ doc.download_status }}">{{ (doc.download_status or 'unverified') | replace('_', ' ') }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+        <p class="hint">Files are served by the original government host. A link marked “restricted” or “missing” may require a bidder login or may have been removed.</p>
+        {% else %}
+        <p class="muted-box">No public attachment was found on the notice page. Some agencies publish bid documents only through the e-GP portal after registration.</p>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Change history</h2>
+          <span class="count">{{ changes | length }}</span>
+        </div>
+        {% if changes %}
+        <ol class="timeline">
+          {% for change in changes %}
+          <li>
+            <strong>{{ change.change_type | replace('_', ' ') | capitalize }}</strong>
+            <span class="change-when">{{ change.detected_at | datetime }}</span>
+            {% if change.field %}
+            <span class="change-body">{{ change.field }}{% if change.old_value %} was {{ change.old_value }}{% endif %}{% if change.new_value %} → {{ change.new_value }}{% endif %}</span>
+            {% elif change.note %}
+            <span class="change-body">{{ change.note }}</span>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p class="muted-box">No changes recorded since this notice was first discovered.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="detail-side">
+      <section class="panel">
+        <h2>Source</h2>
+        <p class="small-muted">Collected from {{ tender.source_name }}.</p>
+        {% if tender.source_url %}
+        <a class="btn primary full" href="{{ tender.source_url }}" target="_blank" rel="noopener noreferrer nofollow">Open original notice</a>
+        <p class="url-break">{{ tender.source_url }}</p>
+        {% else %}
+        <p class="muted-box">No source URL recorded.</p>
+        {% endif %}
+        {% if additional_sources %}
+        <h3 class="side-sub">Also published at</h3>
+        <ul class="plain-list">
+          {% for row in additional_sources %}
+          <li><a href="{{ row.source_url }}" target="_blank" rel="noopener noreferrer nofollow">{{ row.source_url }}</a></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </section>
+
+      {% if tender.contact_info %}
+      <section class="panel">
+        <h2>Contact</h2>
+        <p class="prose">{{ tender.contact_info }}</p>
+      </section>
+      {% endif %}
+
+      {% if related %}
+      <section class="panel">
+        <h2>More from this organization</h2>
+        <ul class="plain-list">
+          {% for item in related %}
+          <li><a href="/tenders/{{ item.id }}">{{ item.title }}</a><span class="sub">{{ item.deadline | date }}</span></li>
+          {% endfor %}
+        </ul>
+      </section>
+      {% endif %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

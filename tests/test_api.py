@@ -2,7 +2,12 @@ from __future__ import annotations
 
 
 def test_root_and_health(client):
-    root = client.get("/")
+    website = client.get("/")
+    assert website.status_code == 200
+    assert "text/html" in website.headers["content-type"]
+    assert "Bidders Nepal" in website.text
+
+    root = client.get("/api")
     assert root.status_code == 200
     assert root.json()["docs"] == "/docs"
 
@@ -38,10 +43,55 @@ def test_all_tenders_pagination_and_filters(client, seeded_tenders):
     assert bad_page.status_code == 422
 
 
-def test_strict_verified_feed_rejects_pending(client, seeded_tenders):
+def test_public_feed_is_not_empty_and_verified_flag_narrows_it(client, seeded_tenders):
+    # Regression: this endpoint used to hard-code the verified filter and returned
+    # zero rows until an admin had reviewed collected notices.
     body = client.get("/api/v1/tenders", params={"status": ""}).json()
-    assert body["total"] >= 2
-    assert all(item["verification_status"] == "verified" for item in body["items"])
+    assert body["total"] >= 3
+    assert {item["verification_status"] for item in body["items"]} <= {"pending", "verified"}
+
+    verified = client.get(
+        "/api/v1/tenders", params={"status": "", "verified_only": True}
+    ).json()
+    assert verified["total"] >= 2
+    assert all(item["verification_status"] == "verified" for item in verified["items"])
+
+
+def test_tender_feed_supports_id_lookup_for_saved_lists(client, seeded_tenders):
+    wanted = [seeded_tenders[0]["id"], seeded_tenders[2]["id"]]
+    body = client.get(
+        "/api/v1/tenders/all", params={"ids": ",".join(str(item) for item in wanted)}
+    ).json()
+    assert body["total"] == 2
+    assert {item["id"] for item in body["items"]} == set(wanted)
+    assert client.get("/api/v1/tenders/all", params={"ids": "not-a-number"}).status_code == 422
+
+
+def test_public_website_pages(client, seeded_tenders):
+    for path in [
+        "/",
+        "/tenders",
+        "/latest",
+        "/closing-soon",
+        "/categories",
+        "/organizations",
+        "/places",
+        "/alerts",
+        "/saved",
+        "/about",
+        "/contact",
+    ]:
+        response = client.get(path)
+        assert response.status_code == 200, (path, response.text[:300])
+
+    detail = client.get(f"/tenders/{seeded_tenders[0]['id']}")
+    assert detail.status_code == 200
+    assert seeded_tenders[0]["title"] in detail.text
+    assert "Not available" in detail.text  # missing fields are labelled, not invented
+
+    filtered = client.get("/tenders", params={"q": "medical equipment"})
+    assert filtered.status_code == 200
+    assert "medical equipment" in filtered.text.lower()
 
 
 def test_tender_detail_documents_changes_and_sources(client, seeded_tenders):

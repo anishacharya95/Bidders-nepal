@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Bidders Nepal</title>
+  <meta name="description" content="Bidders Nepal aggregates public government tender notices, bid documents and procurement updates from official Nepali sources.">
+  <link rel="stylesheet" href="/static/site.css">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark">BN</span>
+        <span class="brand-name">Bidders <strong>Nepal</strong></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="/tenders" class="{{ 'active' if path == '/tenders' else '' }}">All tenders</a>
+        <a href="/latest" class="{{ 'active' if path == '/latest' else '' }}">Latest</a>
+        <a href="/closing-soon" class="{{ 'active' if path == '/closing-soon' else '' }}">Closing soon</a>
+        <a href="/categories" class="{{ 'active' if path == '/categories' else '' }}">Categories</a>
+        <a href="/organizations" class="{{ 'active' if path == '/organizations' else '' }}">Organizations</a>
+        <a href="/places" class="{{ 'active' if path == '/places' else '' }}">Locations</a>
+        <a href="/alerts" class="{{ 'active' if path == '/alerts' else '' }}">Alerts</a>
+        <a href="/saved" class="{{ 'active' if path == '/saved' else '' }}">Saved <span class="saved-count" data-saved-count></span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div>
+        <div class="brand footer-brand"><span class="brand-mark">BN</span><span>Bidders Nepal</span></div>
+        <p>Independent tender aggregator for Nepal. Every notice links back to its official public source. Unpublished details are shown as “Not available”, never guessed.</p>
+      </div>
+      <div>
+        <h3>Explore</h3>
+        <a href="/tenders">All tenders</a>
+        <a href="/closing-soon">Closing soon</a>
+        <a href="/organizations">Organizations</a>
+        <a href="/places">Provinces &amp; districts</a>
+      </div>
+      <div>
+        <h3>Platform</h3>
+        <a href="/docs">API documentation</a>
+        <a href="/api/v1/stats">Live statistics</a>
+        <a href="/api/v1/coverage">Source coverage</a>
+        <a href="/admin">Admin dashboard</a>
+      </div>
+      <div>
+        <h3>About</h3>
+        <a href="/about">How it works</a>
+        <a href="/contact">Contact</a>
+        <a href="/alerts">Change alerts</a>
+      </div>
+    </div>
+    <div class="wrap footer-bottom">
+      <span>© {{ now_year if now_year else 2026 }} Bidders Nepal · Public data from official government sources</span>
+      <span>Not affiliated with the Government of Nepal</span>
+    </div>
+  </footer>
+  <script src="/static/site.js" defer></script>
+</body>
+</html>

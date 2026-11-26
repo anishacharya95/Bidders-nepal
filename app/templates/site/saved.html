@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head">
+  <div><h1>Saved tenders</h1><p>Stored privately in this browser. No account is required, and nothing is uploaded.</p></div>
+  <div class="result-count"><strong data-saved-total>0</strong> saved</div>
+</div>
+<div class="wrap section">
+  <div id="saved-list" class="tender-grid single">
+    <div class="loading">Loading saved tenders…</div>
+  </div>
+  <div id="saved-empty" class="empty-state" hidden>
+    <h3>Nothing saved yet</h3>
+    <p>Open any tender and choose “Save tender” to keep it here on this device.</p>
+    <a class="btn primary" href="/tenders">Browse tenders</a>
+  </div>
+  <p class="hint">Saved records stay available even if the source site is temporarily offline.</p>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var list = document.getElementById('saved-list');
+  var empty = document.getElementById('saved-empty');
+  var ids = [];
+  try { ids = JSON.parse(localStorage.getItem('bn_saved_tenders') || '[]'); } catch (e) { ids = []; }
+  ids = ids.map(Number).filter(function (id) { return id > 0; });
+  document.querySelectorAll('[data-saved-total]').forEach(function (el) { el.textContent = ids.length; });
+  if (!ids.length) { list.hidden = true; empty.hidden = false; return; }
+  fetch('/api/v1/tenders/all?ids=' + encodeURIComponent(ids.join(',')) + '&page_size=200')
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      var items = (data && data.items) || [];
+      if (!items.length) { list.hidden = true; empty.hidden = false; return; }
+      list.innerHTML = items.map(function (t) {
+        var docs = (t.documents || []).length;
+        var deadline = t.deadline ? new Date(t.deadline).toLocaleString() : 'Not available';
+        return '<article class="tender-card">' +
+          '<div class="tender-card-top"><span class="tag">' + escapeHtml(t.category) + '</span>' +
+          '<span class="status status-' + escapeHtml(t.status) + '">' + escapeHtml(t.status) + '</span></div>' +
+          '<h3><a href="/tenders/' + t.id + '">' + escapeHtml(t.title) + '</a></h3>' +
+          '<p class="org">' + escapeHtml(t.organization_name) + '</p>' +
+          '<div class="meta"><span>Deadline: <strong>' + escapeHtml(deadline) + '</strong></span>' +
+          (docs ? '<span class="docs">' + docs + ' document' + (docs === 1 ? '' : 's') + '</span>' : '') +
+          '</div></article>';
+      }).join('');
+    })
+    .catch(function () {
+      list.innerHTML = '<div class="empty-state"><h3>Could not load saved tenders</h3><p>The API is unreachable right now. Your saved list is still stored in this browser.</p></div>';
+    });
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+    });
+  }
+});
+</script>
+{% endblock %}

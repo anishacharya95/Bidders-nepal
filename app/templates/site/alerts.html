@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head">
+  <div><h1>{{ heading }}</h1><p>Deadline extensions, new bid documents, amendments, cancellations and duplicate-source links recorded by the collector.</p></div>
+  <div class="result-count"><strong>{{ rows | length }}</strong> updates</div>
+</div>
+<div class="wrap section">
+  {% if rows %}
+  <ul class="alert-list">
+    {% for change in rows %}
+    <li>
+      <span class="alert-type alert-{{ change.change_type }}">{{ change.change_type | replace('_', ' ') }}</span>
+      <div>
+        <a href="/tenders/{{ change.tender.id }}">{{ change.tender.title }}</a>
+        <p class="sub">{{ change.tender.organization_name }} · {{ change.detected_at | datetime }}</p>
+        {% if change.field %}
+        <p class="alert-body">{{ change.field }}{% if change.old_value %} changed from {{ change.old_value }}{% endif %}{% if change.new_value %} to {{ change.new_value }}{% endif %}</p>
+        {% elif change.note %}
+        <p class="alert-body">{{ change.note }}</p>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty-state"><h3>No changes recorded yet</h3><p>Alerts appear when a previously collected notice changes — a deadline moves, a document is added, or a notice is cancelled.</p></div>
+  {% endif %}
+</div>
+{% endblock %}

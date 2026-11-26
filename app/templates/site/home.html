@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div class="wrap hero-inner">
+    <div class="hero-copy">
+      <span class="eyebrow">Nepal public procurement, aggregated</span>
+      <h1>Every government tender.<br><span>One clear place.</span></h1>
+      <p>Notices, bid documents, deadline changes and cancellations collected automatically from official Nepali procurement sources — PPMO, ministries, departments, utilities, provinces and local governments.</p>
+      <form class="hero-search" action="/tenders" method="get" role="search">
+        <input type="search" name="q" placeholder="Search title, organization, notice number…" aria-label="Search tenders">
+        <button type="submit">Search tenders</button>
+      </form>
+      <div class="hero-links">
+        <a href="/closing-soon">Closing soon</a>
+        <a href="/categories">Browse categories</a>
+        <a href="/places">By province</a>
+      </div>
+    </div>
+    <div class="hero-panel">
+      <div class="hero-panel-head">
+        <span>Live platform data</span>
+        <span class="pulse">Updated continuously</span>
+      </div>
+      <dl class="hero-stats">
+        <div><dt>Tender notices</dt><dd>{{ stats.tenders.total }}</dd></div>
+        <div><dt>Open now</dt><dd>{{ stats.tenders.open }}</dd></div>
+        <div><dt>Closing in 7 days</dt><dd>{{ stats.tenders.closing_soon_7d }}</dd></div>
+        <div><dt>Bid documents</dt><dd>{{ stats.documents.total }}</dd></div>
+        <div><dt>Registered sources</dt><dd>{{ stats.sources.registered }}</dd></div>
+        <div><dt>Sources scanned OK</dt><dd>{{ stats.sources.scanned_successfully }}</dd></div>
+      </dl>
+      <p class="hero-note">{{ stats.tenders.pending }} notices await admin review · {{ stats.sources.failing }} sources currently failing</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section">
+  <div class="section-head">
+    <div>
+      <h2>Latest tenders</h2>
+      <p>Newest public notices discovered by the collector.</p>
+    </div>
+    <a class="see-all" href="/latest">View all →</a>
+  </div>
+  {% if latest %}
+  <div class="tender-grid">
+    {% for tender in latest %}{% include "_tender_card.html" %}{% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h3>No tenders collected yet</h3>
+    <p>The collector stores a notice only after an official source publishes it. Check back after the next scheduled scan.</p>
+    <a class="btn" href="/api/v1/stats">See collection status</a>
+  </div>
+  {% endif %}
+</section>
+
+<section class="wrap section split-section">
+  <div>
+    <div class="section-head compact">
+      <div><h2>Closing soon</h2><p>Published deadlines in the next 14 days.</p></div>
+      <a class="see-all" href="/closing-soon">All →</a>
+    </div>
+    {% if closing %}
+    <ul class="compact-list">
+      {% for tender in closing %}
+      <li>
+        <a href="/tenders/{{ tender.id }}">{{ tender.title }}</a>
+        <span class="sub">{{ tender.organization_name }}</span>
+        <span class="deadline">{{ tender.deadline | datetime }} · <em>{{ tender.deadline | days_left }}</em></span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted-box">No open notice currently has a published deadline in this window. Many Nepali notices publish the deadline only inside the bid document.</p>
+    {% endif %}
+  </div>
+  <div>
+    <div class="section-head compact">
+      <div><h2>Popular categories</h2></div>
+      <a class="see-all" href="/categories">All →</a>
+    </div>
+    <div class="chip-grid">
+      {% for item in categories %}
+      <a class="chip" href="/tenders?category={{ item.value | urlencode }}">
+        <span>{{ item.value }}</span><strong>{{ item.count }}</strong>
+      </a>
+      {% else %}
+      <p class="muted">Categories appear once notices are collected.</p>
+      {% endfor %}
+    </div>
+    <div class="section-head compact top-gap">
+      <div><h2>By province</h2></div>
+      <a class="see-all" href="/places">All →</a>
+    </div>
+    <div class="chip-grid">
+      {% for item in provinces %}
+      <a class="chip" href="/tenders?province={{ item.value | urlencode }}">
+        <span>{{ item.value }}</span><strong>{{ item.count }}</strong>
+      </a>
+      {% else %}
+      <p class="muted">Province data appears as sources are collected.</p>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap band-inner">
+    <div>
+      <h2>Built for coverage, honest about gaps</h2>
+      <p>All {{ coverage.local_governments.directory_entries }} local governments are registered in the directory. A unit counts as connected only after its official website is verified and successfully scanned.</p>
+    </div>
+    <dl class="band-stats">
+      <div><dt>Website verified</dt><dd>{{ coverage.local_governments.website_verified }}</dd></div>
+      <div><dt>Tender page verified</dt><dd>{{ coverage.local_governments.tender_page_verified }}</dd></div>
+      <div><dt>Scanned successfully</dt><dd>{{ coverage.local_governments.scanned_successfully }}</dd></div>
+      <div><dt>Inaccessible</dt><dd>{{ coverage.local_governments.inaccessible }}</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="wrap section">
+  <div class="section-head">
+    <div><h2>How Bidders Nepal works</h2><p>Automation with a paper trail for every record.</p></div>
+  </div>
+  <div class="feature-grid">
+    <div class="feature"><span>01</span><h3>Discover</h3><p>Official listings are scanned on a schedule. Inaccessible and login-only portals are recorded, never bypassed.</p></div>
+    <div class="feature"><span>02</span><h3>Extract</h3><p>Title, organization, dates, budget and contact details are parsed. Missing fields stay “Not available”.</p></div>
+    <div class="feature"><span>03</span><h3>Attach</h3><p>Public bid documents, BOQs, drawings and addenda are linked from the notice with format and reachability.</p></div>
+    <div class="feature"><span>04</span><h3>Track</h3><p>Deadline extensions, cancellations and new files are recorded as changes with history and alerts.</p></div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head">
+  <div><h1>{{ heading }}</h1><p>Province and district coverage of collected notices, plus registered local-government sources.</p></div>
+</div>
+<div class="wrap section">
+  <div class="split-section">
+    <div>
+      <h2 class="sub-head">Provinces</h2>
+      {% if provinces %}
+      <div class="place-list">
+        {% for item in provinces %}
+        <a href="/tenders?province={{ item.value | urlencode }}"><span>{{ item.value }}</span><strong>{{ item.count }}</strong></a>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted-box">No province data collected yet.</p>{% endif %}
+    </div>
+    <div>
+      <h2 class="sub-head">Districts</h2>
+      {% if districts %}
+      <div class="place-list two-col">
+        {% for item in districts %}
+        <a href="/tenders?district={{ item.value | urlencode }}"><span>{{ item.value }}</span><strong>{{ item.count }}</strong></a>
+        {% endfor %}
+      </div>
+      {% else %}<p class="muted-box">No district data collected yet.</p>{% endif %}
+    </div>
+  </div>
+</div>
+
+<section class="band">
+  <div class="wrap band-inner">
+    <div>
+      <h2>Local-government source status</h2>
+      <p>All {{ coverage.local_governments.directory_entries }} units are registered. A unit is counted as connected only when its official website is verified and its tender page has been scanned successfully.</p>
+    </div>
+    <dl class="band-stats">
+      <div><dt>Registered</dt><dd>{{ coverage.local_governments.registered_in_platform }}</dd></div>
+      <div><dt>Website verified</dt><dd>{{ coverage.local_governments.website_verified }}</dd></div>
+      <div><dt>Tender page verified</dt><dd>{{ coverage.local_governments.tender_page_verified }}</dd></div>
+      <div><dt>Scanned OK</dt><dd>{{ coverage.local_governments.scanned_successfully }}</dd></div>
+    </dl>
+  </div>
+</section>
+{% endblock %}

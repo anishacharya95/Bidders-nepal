@@ -29,25 +29,47 @@ TENDER_LINK_HINTS = (
 
 
 def candidate_hosts(source: Source) -> list[str]:
+    """Generate plausible official hosts for a local government.
+
+    Nepali local governments use several conventions:
+    ``kathmandu.gov.np``, ``lalitpurmun.gov.np``, ``pokharamun.gov.np``,
+    ``dharanmun.gov.np``, ``birgunjmun.gov.np``, ``hetaudamun.gov.np``. Earlier
+    versions only produced ``<name>mun.gov.np`` (wrong for metropolitan cities
+    like Kathmandu) and a malformed dotted variant, which is why no local
+    government website was ever verified. Every candidate is still checked for
+    an HTTPS response whose content names the unit before it is stored.
+    """
     base = source.organization_name or source.name
-    base = re.sub(r"\b(Metropolitan City|Sub-Metropolitan City|Municipality|Rural Municipality)\b", "", base)
+    base = re.sub(
+        r"\b(Metropolitan City|Sub-Metropolitan City|Municipality|Rural Municipality)\b",
+        "",
+        base,
+    )
     words = re.findall(r"[a-z0-9]+", base.lower())
     if not words:
         return []
     compact = "".join(words)
     first = words[0]
-    stems = {compact, first}
-    if source.name.startswith(re.sub(r"\s+(Municipality|Rural Municipality|Metropolitan City|Sub-Metropolitan City)$", "", source.name)):
-        pass
-    suffixes = ["mun.gov.np", "rmun.gov.np", "metropolitan.gov.np", "mc.gov.np", "nagarpalika.gov.np", "gaunpalika.gov.np"]
+    # Common Nepali place-name spellings differ by a trailing vowel.
+    variants = {compact, first}
+    if compact.endswith("pur"):
+        variants.add(compact[:-3])
+    stems = sorted(variants, key=len, reverse=True)
+
     hosts: list[str] = []
     for stem in stems:
         if len(stem) < 4:
             continue
-        for suffix in suffixes:
-            host = f"{stem}{suffix}" if suffix.endswith("mun.gov.np") else f"{stem}.{suffix}"
-            hosts.append(host)
-    return list(dict.fromkeys(hosts))[:6]
+        hosts.extend(
+            [
+                f"{stem}.gov.np",
+                f"{stem}mun.gov.np",
+                f"{stem}rmun.gov.np",
+                f"{stem}mc.gov.np",
+                f"{stem}nagarpalika.gov.np",
+            ]
+        )
+    return list(dict.fromkeys(hosts))[:12]
 
 
 def _name_matches(source: Source, html: str) -> bool:

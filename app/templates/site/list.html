@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head">
+  <div>
+    <h1>{{ heading }}</h1>
+    <p>{{ subheading }}</p>
+  </div>
+  <div class="result-count"><strong>{{ total }}</strong> notice{{ '' if total == 1 else 's' }}</div>
+</div>
+
+<div class="wrap layout">
+  <aside class="filters-panel">
+    <form method="get" action="{{ path }}" class="filters-form">
+      <label>
+        <span>Search</span>
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Title, organization, ID…">
+      </label>
+      <label>
+        <span>Category</span>
+        <select name="category">
+          <option value="">All categories</option>
+          {% for item in facets.categories %}
+          <option value="{{ item.value }}" {{ 'selected' if filters.category == item.value else '' }}>{{ item.value }} ({{ item.count }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>Province</span>
+        <select name="province">
+          <option value="">All provinces</option>
+          {% for item in facets.provinces %}
+          <option value="{{ item.value }}" {{ 'selected' if filters.province == item.value else '' }}>{{ item.value }} ({{ item.count }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        <span>District</span>
+        <select name="district">
+          <option value="">All districts</option>
+          {% for item in facets.districts %}
+          <option value="{{ item.value }}" {{ 'selected' if filters.district == item.value else '' }}>{{ item.value }} ({{ item.count }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if filters.deadline_days is none %}
+      <label>
+        <span>Status</span>
+        <select name="status">
+          <option value="">Any status</option>
+          {% for value in ['open', 'closed', 'cancelled', 'awarded'] %}
+          <option value="{{ value }}" {{ 'selected' if filters.status == value else '' }}>{{ value | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+      <label>
+        <span>Sort by</span>
+        <select name="sort">
+          {% for value, label in sorts.items() %}
+          <option value="{{ value }}" {{ 'selected' if filters.sort == value else '' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="check-line">
+        <input type="checkbox" name="verified_only" value="true" {{ 'checked' if filters.verified_only else '' }}>
+        <span>Reviewed records only</span>
+      </label>
+      {% if filters.deadline_days is not none %}
+      <input type="hidden" name="days" value="{{ filters.deadline_days }}">
+      {% endif %}
+      <div class="filter-actions">
+        <button class="btn primary" type="submit">Apply filters</button>
+        <a class="btn ghost" href="{{ path }}">Reset</a>
+      </div>
+    </form>
+    <p class="filter-note">Filters run against live collected records only. Empty results mean nothing matching has been discovered yet.</p>
+  </aside>
+
+  <div class="results">
+    {% if rows %}
+    <div class="tender-grid single">
+      {% for tender in rows %}{% include "_tender_card.html" %}{% endfor %}
+    </div>
+
+    {% if pages > 1 %}
+    <nav class="pagination" aria-label="Pagination">
+      {% if page > 1 %}
+      <a href="{{ request.url.include_query_params(page=page-1) }}">← Previous</a>
+      {% else %}<span class="disabled">← Previous</span>{% endif %}
+      <span class="page-info">Page {{ page }} of {{ pages }}</span>
+      {% if page < pages %}
+      <a href="{{ request.url.include_query_params(page=page+1) }}">Next →</a>
+      {% else %}<span class="disabled">Next →</span>{% endif %}
+    </nav>
+    {% endif %}
+    {% else %}
+    <div class="empty-state">
+      <h3>No notices match these filters</h3>
+      <p>Try a broader search, remove the category or province filter, or check back after the next collection run. Nothing is fabricated to fill this page.</p>
+      <a class="btn" href="/tenders">Show all tenders</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

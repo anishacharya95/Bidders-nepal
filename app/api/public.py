@@ -60,6 +60,7 @@ def _filters(
     deadline_from: datetime | None = None,
     deadline_to: datetime | None = None,
     include_rejected: bool = False,
+    ids: list[int] | None = None,
 ) -> TenderQueryParams:
     return TenderQueryParams(
         q=_empty(q),
@@ -76,6 +77,7 @@ def _filters(
         deadline_from=deadline_from,
         deadline_to=deadline_to,
         include_rejected=include_rejected,
+        ids=ids,
     )
 
 
@@ -95,12 +97,25 @@ def list_all_tenders(
     published_to: datetime | None = None,
     deadline_from: datetime | None = None,
     deadline_to: datetime | None = None,
+    ids: str | None = Query(
+        default=None,
+        description="Comma-separated tender ids (max 200), used by saved lists.",
+        max_length=1200,
+    ),
     sort: SortKey = "newest",
     page: int = Query(1, ge=1),
     page_size: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
     """Public full-record feed including pending notices (rejected excluded by default)."""
+    selected_ids: list[int] | None = None
+    if ids:
+        try:
+            selected_ids = [int(item) for item in ids.split(",") if item.strip()][:200]
+        except ValueError:
+            raise HTTPException(status_code=422, detail="ids must be a comma-separated list of integers")
+        if not selected_ids:
+            selected_ids = None
     params = _filters(
         q=q,
         category=category,
@@ -116,6 +131,7 @@ def list_all_tenders(
         deadline_from=deadline_from,
         deadline_to=deadline_to,
         include_rejected=include_rejected,
+        ids=selected_ids,
     )
     query = apply_sort(apply_filters(db.query(Tender), params), sort)
     total, rows = paginate(_query_with_documents(query), page, page_size)
@@ -138,12 +154,23 @@ def list_tenders(
     organization: str | None = None,
     status: str | None = "open",
     has_documents: bool | None = None,
+    verified_only: bool = Query(
+        default=False,
+        description=(
+            "Restrict to admin-verified records. Off by default because collected notices "
+            "stay pending until reviewed; pending records are public and clearly labelled."
+        ),
+    ),
     sort: SortKey = "closing",
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Verified-only public listing (the strict feed)."""
+    """Public listing; pass ``verified_only=true`` for the reviewed-only feed.
+
+    This endpoint used to hard-code the verified filter, which made it return an
+    empty page whenever no administrator had reviewed the collected notices yet.
+    """
     params = _filters(
         q=q,
         category=category,
@@ -151,8 +178,8 @@ def list_tenders(
         district=district,
         municipality=municipality,
         organization=organization,
-        status=status,
-        verification_status="verified",
+        status=status or None,
+        verification_status="verified" if verified_only else None,
         has_documents=has_documents,
     )
     query = apply_sort(apply_filters(db.query(Tender), params), sort)

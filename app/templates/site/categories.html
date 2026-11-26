@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="wrap page-head">
+  <div><h1>{{ heading }}</h1><p>Procurement categories detected in collected notices.</p></div>
+  <div class="result-count"><strong>{{ total }}</strong> notices</div>
+</div>
+<div class="wrap section">
+  {% if counts %}
+  <div class="category-grid">
+    {% for item in counts %}
+    <a class="category-card" href="/tenders?category={{ item.value | urlencode }}">
+      <span class="category-name">{{ item.value }}</span>
+      <span class="category-count">{{ item.count }}</span>
+      <span class="category-link">View {{ item.value | lower }} tenders →</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state"><h3>No categories yet</h3><p>Categories are derived from collected notices.</p></div>
+  {% endif %}
+</div>
+{% endblock %}

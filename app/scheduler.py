@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -24,7 +24,7 @@ def _run(mode: str, trigger: str) -> dict | None:
     try:
         sync_registry(db)
         result = run_collection(db, mode=mode, trigger=trigger)
-        _last_runs[mode] = datetime.utcnow().isoformat()
+        _last_runs[mode] = datetime.now(timezone.utc).isoformat()
         log.info(
             "Scheduled %s collection finished: status=%s inserted=%s failed=%s",
             mode,

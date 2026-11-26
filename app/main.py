@@ -13,6 +13,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.api import admin, admin_ui, auth, public
+from app import web as website
 from app.collectors.registry import sync_registry
 from app.config import settings
 from app.database import SessionLocal, engine, get_db
@@ -90,6 +91,7 @@ app.include_router(public.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(admin_ui.router)
+app.include_router(website.router)
 
 
 @app.exception_handler(HTTPException)
@@ -107,15 +109,19 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-@app.get("/")
-def root():
+@app.get("/api")
+def api_index():
+    """Machine-readable service index. The public website is served at ``/``."""
     return {
         "name": settings.app_name,
         "version": settings.version,
+        "website": "/",
         "docs": "/docs",
         "health": "/health",
         "tenders": "/api/v1/tenders/all",
+        "sources": "/api/v1/sources",
         "coverage": "/api/v1/coverage",
+        "stats": "/api/v1/stats",
         "admin_dashboard": "/admin",
     }
 

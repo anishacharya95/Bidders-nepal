@@ -26,9 +26,12 @@ class TenderQueryParams:
     deadline_from: datetime | None = None
     deadline_to: datetime | None = None
     include_rejected: bool = False
+    ids: list[int] | None = None
 
 
 def apply_filters(query: Query, params: TenderQueryParams) -> Query:
+    if params.ids:
+        query = query.filter(Tender.id.in_(params.ids))
     if params.verification_status:
         query = query.filter(Tender.verification_status == params.verification_status)
     elif not params.include_rejected:

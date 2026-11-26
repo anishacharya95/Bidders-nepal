@@ -60,7 +60,16 @@ def select_sources(db: Session, mode: str, limit: int | None = None, source_ids:
     )
 
 
-def _status_for(deadline: datetime | None) -> str:
+def _status_for(deadline: datetime | None, notice_type: str | None = None) -> str:
+    """Derive a status from the notice type and deadline.
+
+    A cancellation notice is never "open" even when it carries a deadline, and an
+    award notice is not biddable either.
+    """
+    if notice_type == "cancellation":
+        return "cancelled"
+    if notice_type == "award":
+        return "awarded"
     if deadline is None:
         return "open"
     reference = deadline if deadline.tzinfo else deadline.replace(tzinfo=timezone.utc)
@@ -145,7 +154,7 @@ def _apply_candidate(tender: Tender, candidate: Candidate, db: Session) -> list[
     elif candidate.deadline and not tender.deadline:
         tender.deadline = candidate.deadline
 
-    new_status = _status_for(tender.deadline)
+    new_status = _status_for(tender.deadline, tender.notice_type)
     if tender.status != new_status:
         record("status_changed", "status", tender.status, new_status)
         tender.status = new_status
@@ -317,8 +326,18 @@ def run_collection(
                                 )
                             )
                         elif candidate.documents:
-                            docs = _document_rows(candidate.documents, existing.source_url or candidate.url, fetcher, [0])
-                            _merge_documents(existing, docs, db)
+                            # Probe a small budget here too: duplicate sources used to
+                            # store every attachment as "unverified", so real reachable
+                            # bid documents were reported as unconfirmed.
+                            docs = _document_rows(
+                                candidate.documents,
+                                existing.source_url or candidate.url,
+                                fetcher,
+                                [max(1, min(6, settings.collector_detail_fetch_limit))],
+                            )
+                            added = _merge_documents(existing, docs, db)
+                            totals["documents_found"] += added
+                            source_docs += added
                         db.commit()
                         continue
 
@@ -357,7 +376,7 @@ def run_collection(
                         source_name=source.name[:200],
                         source_url=candidate.url,
                         document_url=documents[0].url if documents else None,
-                        status=_status_for(candidate.deadline),
+                        status=_status_for(candidate.deadline, candidate.notice_type),
                         verification_status="pending",
                         source_id=source.id,
                         raw_source_id=candidate.raw_source_id,
