@@ -255,6 +255,91 @@ def parse_generic(soup: BeautifulSoup, page_url: str, source: Source) -> list[Ca
     return candidates
 
 
+def parse_bolpatra_egp(soup: BeautifulSoup, page_url: str, source: Source) -> list[Candidate]:
+    """Parse publicly visible project cards/rows from the official Nepal e-GP portal.
+
+    This deliberately reads only links and text already present in the public
+    HTML response. It does not submit search forms, authenticate, or access
+    bidder-only workflows.
+    """
+    candidates: list[Candidate] = []
+    seen: set[str] = set()
+    ignored = {
+        "home", "published projects", "open projects", "all published",
+        "open now", "sign in", "register", "help", "help & guidance",
+        "find projects", "view all", "search",
+    }
+    for anchor in soup.select("a[href]"):
+        href = (anchor.get("href") or "").strip()
+        if not href or href.startswith(("javascript:", "mailto:", "tel:", "#")):
+            continue
+        target = canonical_url(urljoin(page_url, href))
+        parsed_url = urlparse(target)
+        if parsed_url.hostname not in {"bolpatra.gov.np", "www.bolpatra.gov.np"}:
+            continue
+        path_lower = parsed_url.path.lower()
+        if any(part in path_lower for part in ("/login", "/register", "/training", "/help")):
+            continue
+
+        row = anchor.find_parent(["tr", "article", "li"]) or anchor.parent
+        if row is None:
+            continue
+        row_text = normalise_space(row.get_text(" ", strip=True))[:1600]
+        title = normalise_space(anchor.get_text(" ", strip=True))
+        if len(title) < 8:
+            heading = row.find(["h1", "h2", "h3", "h4", "strong"])
+            title = normalise_space(heading.get_text(" ", strip=True)) if heading else title
+        if not title or len(title) > 500 or title.lower() in ignored:
+            continue
+        if target == canonical_url(page_url) or target in seen:
+            continue
+
+        # A project record should carry procurement context in its row or link.
+        context = f"{title} {row_text}".lower()
+        procurement_markers = (
+            "ifb", "rfp", "eoi", "pq", "bid", "procurement", "published",
+            "submission", "deadline", "public entity", "goods", "works",
+            "services", "बोलपत्र", "खरिद",
+        )
+        if not any(marker in context for marker in procurement_markers):
+            continue
+        if not is_notice_detail_url(target) and not any(
+            marker in path_lower for marker in ("/project", "/opportun", "/bid", "/notice", "/view")
+        ):
+            continue
+
+        public_entity = None
+        entity_match = re.search(
+            r"(?:public entity|entity name|procuring entity)\s*[:\-]?\s*(.{3,180}?)(?=\s+(?:category|published|deadline|last date|submission)|$)",
+            row_text,
+            re.IGNORECASE,
+        )
+        if entity_match:
+            public_entity = entity_match.group(1).strip(" :-|")
+        organization = public_entity or source.organization_name or "Public Procurement Monitoring Office (PPMO)"
+        number = notice_number(f"{title} {row_text}")
+        raw_id = _path_id(target) or number
+        docs = _documents_in(row, page_url)
+        candidates.append(
+            Candidate(
+                title=title[:500],
+                url=target,
+                organization_name=organization[:300],
+                notice_number=number,
+                category=category_from_text(f"{title} {row_text}"),
+                published_date=_date_near_labels(
+                    row_text, ("published date", "notice published", "publication date")
+                ),
+                deadline=parse_deadline(row_text),
+                notice_type=notice_type_from_text(f"{title} {row_text}"),
+                raw_source_id=raw_id,
+                documents=docs,
+            )
+        )
+        seen.add(target)
+    return candidates
+
+
 def next_pages(soup: BeautifulSoup, page_url: str) -> list[str]:
     pages: list[str] = []
     for anchor in soup.select("a[href]"):
@@ -305,6 +390,8 @@ def collect_source(source: Source, fetcher: HttpFetcher) -> SourceCollectionResu
             parsed = parse_ppmo(soup, result.final_url, source)
         elif source.collector_key == "nea":
             parsed = parse_nea(soup, result.final_url, source)
+        elif source.collector_key == "bolpatra_egp":
+            parsed = parse_bolpatra_egp(soup, result.final_url, source)
         else:
             parsed = parse_generic(soup, result.final_url, source)
 
