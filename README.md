@@ -84,3 +84,29 @@ Free hosting can sleep when idle and free database limits/retention may change. 
 - Add reviewed source collectors, scheduling, retries and source-check timestamps.
 - Add bidder accounts, roles, notifications and admin password reset.
 - Clearly state Bidders Nepal is an independent aggregator, not a government agency.
+
+
+## Automated PPMO public notice discovery
+
+The first collector checks public PPMO pages every six hours by default. It extracts
+notice-like links from public HTML and stores new candidates as **pending**. Nothing
+is published automatically. The adapter only requests HTTPS pages on ppmo.gov.np
+and rejects redirects outside that host. It does not sign in, submit forms, bypass
+CAPTCHAs, call private APIs, or download protected documents. Page layouts can change,
+so admins must review each source link and complete missing tender details.
+
+This first release does not scrape the e-GP bidder portal. Add separate adapters only
+after confirming the source's published access rules, permission and a stable public
+feed. It is a discovery aid, not a guarantee that every tender is captured.
+
+### Collector settings
+
+- ENABLE_TENDER_COLLECTOR=true (default; set false to pause)
+- TENDER_COLLECT_INTERVAL_MINUTES=360 (default six hours; minimum 60)
+- TENDER_SOURCE_URLS (optional comma-separated approved HTTPS pages on ppmo.gov.np)
+
+### Run a collection immediately
+
+Sign in at /docs, click Authorize, then call POST /api/v1/admin/collector/run.
+Review candidates at GET /api/v1/admin/tenders?verification_status=pending.
+Only admin-verified records appear in public tender listings.
