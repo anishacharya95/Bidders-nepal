@@ -291,12 +291,51 @@ def _duplicate(db: Session, url: str, notice: str | None, title: str, organizati
     return False
 
 
+def _document_type(url: str) -> str:
+    path = urlparse(url).path.lower()
+    if path.endswith(".pdf"): return "PDF"
+    if path.endswith((".doc", ".docx")): return "Word"
+    if path.endswith((".xls", ".xlsx")): return "Spreadsheet"
+    if path.endswith(".zip"): return "Archive"
+    return "Other"
+
+
+def _detail_documents(detail_url: str) -> list[tuple[str, str, str]]:
+    """Extract public attachment links from a tender detail page."""
+    try:
+        response = requests.get(detail_url, headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+                                timeout=(5, 12), allow_redirects=True)
+        response.raise_for_status()
+        if not _allowed(response.url) or "text/html" not in response.headers.get("Content-Type", "").lower():
+            return []
+        soup = BeautifulSoup(response.text, "html.parser")
+        found = []
+        for anchor in soup.select("a[href]"):
+            target = _canonical_url(urljoin(response.url, anchor.get("href", "").strip()))
+            if not _is_document_url(target) or not _allowed(target):
+                continue
+            label = " ".join(anchor.get_text(" ", strip=True).split()) or target.rsplit("/", 1)[-1]
+            found.append((label[:500], target, _document_type(target)))
+        return list(dict.fromkeys(found))
+    except Exception as exc:
+        log.info("Could not inspect tender detail page %s: %s", detail_url, exc)
+        return []
+
+
 def collect_public_notices(db: Session) -> dict:
-    """Fetch allowlisted official pages and insert unseen candidates as pending."""
-    discovered = inserted = duplicates = failed = 0
+    """Scan public sources, persist source health, and attach discoverable public bid files."""
+    discovered = inserted = duplicates = failed = documents_found = 0
     checked_at = datetime.now(timezone.utc)
     sources = _sources()
     for source_url in sources:
+        source_record = db.query(CollectorSource).filter(CollectorSource.url == source_url).first()
+        if not source_record:
+            source_record = CollectorSource(url=source_url, source_name=_source_name(source_url))
+            db.add(source_record)
+            db.flush()
+        source_record.last_checked_at = checked_at
+        source_record.notices_found = 0
+        source_record.documents_found = 0
         try:
             response = requests.get(
                 source_url, headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
@@ -306,14 +345,40 @@ def collect_public_notices(db: Session) -> dict:
             if not _allowed(response.url):
                 raise ValueError("Redirected outside approved public-source hosts")
             if "text/html" not in response.headers.get("Content-Type", "").lower():
+                source_record.status = "ok"
+                source_record.last_success_at = checked_at
+                source_record.last_error = None
+                source_record.consecutive_failures = 0
+                db.commit()
                 continue
             soup = BeautifulSoup(response.text, "html.parser")
             for title, organization, notice, deadline, target, document_url in _candidate_rows(soup, response.url):
                 discovered += 1
+                source_record.notices_found += 1
+                attachments = []
+                if document_url:
+                    attachments.append(("Bid document", document_url, _document_type(document_url)))
+                elif target != response.url:
+                    attachments.extend(_detail_documents(target))
+                source_record.documents_found += len(attachments)
+                documents_found += len(attachments)
+
                 if _duplicate(db, target, notice, title, organization):
                     duplicates += 1
+                    existing = db.query(Tender).filter(Tender.source_url == target).first()
+                    if not existing and notice:
+                        existing = db.query(Tender).filter(Tender.notice_number.ilike(notice)).first()
+                    if existing and attachments:
+                        known = {item.url for item in existing.documents}
+                        for label, file_url, file_type in attachments:
+                            if file_url not in known:
+                                existing.documents.append(TenderDocument(
+                                    label=label, url=file_url, document_type=file_type, source_url=target))
+                        if not existing.document_url:
+                            existing.document_url = attachments[0][1]
                     continue
-                db.add(Tender(
+
+                tender = Tender(
                     title=title[:500],
                     organization_name=(organization or "Not identified - admin review required")[:300],
                     notice_number=notice,
@@ -324,16 +389,35 @@ def collect_public_notices(db: Session) -> dict:
                     deadline=deadline,
                     source_name=_source_name(response.url),
                     source_url=target,
-                    document_url=document_url,
+                    document_url=document_url or (attachments[0][1] if attachments else None),
                     verification_status="pending",
                     status="open",
-                ))
+                )
+                for label, file_url, file_type in attachments:
+                    tender.documents.append(TenderDocument(
+                        label=label, url=file_url, document_type=file_type, source_url=target))
+                db.add(tender)
                 inserted += 1
+
+            source_record.status = "ok"
+            source_record.last_success_at = checked_at
+            source_record.last_error = None
+            source_record.consecutive_failures = 0
             db.commit()
         except Exception as exc:
             db.rollback()
+            source_record = db.query(CollectorSource).filter(CollectorSource.url == source_url).first()
+            if not source_record:
+                source_record = CollectorSource(url=source_url, source_name=_source_name(source_url))
+                db.add(source_record)
+            source_record.last_checked_at = checked_at
+            source_record.status = "error"
+            source_record.last_error = str(exc)[:4000]
+            source_record.consecutive_failures = (source_record.consecutive_failures or 0) + 1
+            db.commit()
             failed += 1
             log.warning("Collector failed for %s: %s", source_url, exc)
+
     return {
         "checked_at": checked_at.isoformat(),
         "sources_checked": len(sources),
@@ -341,5 +425,6 @@ def collect_public_notices(db: Session) -> dict:
         "inserted_pending_review": inserted,
         "duplicates_skipped": duplicates,
         "source_errors": failed,
-        "message": "Official public-source candidates only; verify each original notice before publication.",
+        "document_links_found": documents_found,
+        "message": "Only publicly accessible official-source candidates are collected; verify before publication.",
     }
