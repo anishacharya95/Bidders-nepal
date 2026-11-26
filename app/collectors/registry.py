@@ -270,7 +270,23 @@ def sync_registry(db: Session) -> dict:
             )
             created += 1
             continue
-        if spec.notes and not current.notes:
+        # The official e-GP public projects page was previously registered as
+        # inactive/manual. Keep this narrowly scoped migration so existing
+        # production rows receive the verified public listing URL and shared
+        # collector configuration without changing admin-managed source URLs.
+        if spec.slug == "bolpatra-egp":
+            current.name = spec.name
+            current.organization_name = spec.organization_name
+            current.official_website = spec.website
+            current.tender_page_url = spec.tender_page_url
+            current.collector_key = spec.collector_key
+            current.discovery_status = spec.discovery_status
+            current.requires_authorization = spec.requires_authorization
+            current.active = spec.active
+            current.priority = spec.priority
+            current.notes = spec.notes
+            updated += 1
+        elif spec.notes and not current.notes:
             current.notes = spec.notes
             updated += 1
     db.commit()
