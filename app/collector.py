@@ -114,7 +114,8 @@ def _discover_local_government_sites() -> list[str]:
                    for term in ("स्थानीय तहका वेबसाइट", "वेवसाईट (स्थानीयतह)", "local level website"))
         ]
         for directory_url in directory_links[:5]:
-            if (urlparse(directory_url).hostname or "").lower() not in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+            directory_host = (urlparse(directory_url).hostname or "").lower()
+            if not (directory_host.endswith(".gov.np") or directory_host == "gov.np"):
                 continue
             page = requests.get(
                 directory_url,
@@ -122,7 +123,8 @@ def _discover_local_government_sites() -> list[str]:
                 timeout=(8, 15),
             )
             page.raise_for_status()
-            if (urlparse(page.url).hostname or "").lower() not in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+            final_host = (urlparse(page.url).hostname or "").lower()
+            if not (final_host.endswith(".gov.np") or final_host == "gov.np"):
                 continue
             directory = BeautifulSoup(page.text, "html.parser")
             for anchor in directory.select("a[href]"):
