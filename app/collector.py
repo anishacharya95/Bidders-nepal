@@ -26,10 +26,20 @@ DEFAULT_SOURCES = [
     "https://ppmo.gov.np/",
 ]
 ALLOWED_HOSTS = {"ppmo.gov.np", "www.ppmo.gov.np"}
-KEYWORDS = (
-    "invitation for bid", "invitation for electronic", "tender", "quotation",
-    "expression of interest", "request for proposal", "bid notice",
-    "बोलपत्र", "दरभाउपत्र", "सिलबन्दी",
+NOTICE_PHRASES = (
+    "invitation for bid", "invitation for bids", "invitation for electronic",
+    "inviting tender", "inviting quotation", "request for proposal",
+    "sealed quotation notice", "tender notice", "bid notice",
+    "procurement of", "supply of", "construction of",
+    "बोलपत्र आह्वान", "बोलपत्रको आह्वान", "दरभाउपत्र आह्वान",
+    "दरभाउपत्रको आह्वान", "सिलबन्दी दरभाउपत्र आह्वान",
+)
+NON_TENDER_PHRASES = (
+    "registration procedure", "registration manual", "user manual",
+    "bidder registration", "e-gp system", "submission deadline",
+    "extension of the tender", "extension of bid", "public holiday",
+    "म्याद थप", "म्याद नपर्ने", "प्रक्रिया पुस्तिका", "दर्ता प्रक्रिया",
+    "प्रणालीमा बोलपत्र पेश", "जानकारी सम्बन्धी",
 )
 SKIP_WORDS = ("login", "register", "contact", "privacy", "career", "result", "blacklist")
 USER_AGENT = "BiddersNepalNoticeBot/1.1 (+https://bidders-nepal-api.onrender.com; public notice discovery)"
@@ -53,9 +63,19 @@ def _canonical_url(url: str) -> str:
                        parsed.path.rstrip("/") or "/", parsed.params, parsed.query, ""))
 
 
-def _looks_like_notice(text: str, href: str) -> bool:
-    haystack = f"{text} {href}".lower()
-    return any(word in haystack for word in KEYWORDS) and not any(word in haystack for word in SKIP_WORDS)
+def _is_notice_detail_url(url: str) -> bool:
+    """Accept individual PPMO content pages, never category/navigation pages."""
+    return bool(re.match(r"^/content/\\d+/", urlparse(url).path))
+
+
+def _looks_like_notice(text: str, href: str = "") -> bool:
+    """Classify from the link title only; parent/category text creates false positives."""
+    title = " ".join((text or "").split()).lower()
+    if not title or any(word in title for word in NON_TENDER_PHRASES):
+        return False
+    if any(word in title for word in ("login", "register", "contact", "privacy", "career", "blacklist")):
+        return False
+    return any(phrase in title for phrase in NOTICE_PHRASES)
 
 
 def _notice_number(text: str) -> str | None:
@@ -125,19 +145,21 @@ def collect_public_notices(db: Session) -> dict:
             soup = BeautifulSoup(response.text, "html.parser")
             for anchor in soup.select("a[href]"):
                 anchor_text = " ".join(anchor.get_text(" ", strip=True).split())
-                parent_text = " ".join(anchor.parent.get_text(" ", strip=True).split()) if anchor.parent else ""
-                context = " ".join(dict.fromkeys(x for x in (anchor_text, parent_text) if x))
-                target = _canonical_url(urljoin(response.url, anchor.get("href", "")))
+                target = _canonical_url(urljoin(response.url, (anchor.get("href", "") or "").strip()))
                 if not anchor_text or len(anchor_text) < 12 or len(anchor_text) > 500 or not _allowed(target):
                     continue
-                if not _looks_like_notice(context, target):
+                if not _is_notice_detail_url(target) or not _looks_like_notice(anchor_text, target):
                     continue
                 discovered += 1
-                existing = db.query(Tender).filter(Tender.source_url == target).first()
-                if existing:
+                known_urls = {
+                    _canonical_url((value or "").strip())
+                    for (value,) in db.query(Tender.source_url).filter(Tender.source_url.isnot(None)).all()
+                    if (value or "").strip()
+                }
+                if target in known_urls:
                     duplicates += 1
                     continue
-                notice = _notice_number(context)
+                notice = _notice_number(anchor_text)
                 if notice and db.query(Tender).filter(Tender.notice_number == notice).first():
                     duplicates += 1
                     continue
@@ -146,7 +168,7 @@ def collect_public_notices(db: Session) -> dict:
                     title=anchor_text[:500],
                     organization_name="Not identified - admin review required",
                     notice_number=notice,
-                    category=_category(context),
+                    category=_category(anchor_text),
                     description=("Discovered on a public PPMO page. The procuring entity, "
                                   "deadline, eligibility and documents must be checked against "
                                   "the original notice before verification."),
