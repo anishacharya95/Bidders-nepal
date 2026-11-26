@@ -39,6 +39,14 @@ class TenderUpdate(BaseModel):
     status: Literal["open", "closed", "cancelled", "awarded"] | None = None
     verification_status: Literal["pending", "verified", "rejected"] | None = None
 
+class TenderDocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    label: str
+    url: str
+    document_type: str
+    source_url: str | None
+
 class TenderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -55,6 +63,7 @@ class TenderOut(BaseModel):
     source_name: str
     source_url: str | None
     document_url: str | None
+    documents: list[TenderDocumentOut] = Field(default_factory=list)
     status: str
     verification_status: str
     created_at: datetime
