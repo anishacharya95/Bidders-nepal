@@ -172,7 +172,7 @@ CENTRAL_SOURCES: tuple[SourceSpec, ...] = (
         "bolpatra-egp", "Nepal e-GP (Bolpatra)", "नेपाल सरकार इ-जीपी",
         "Public Procurement Monitoring Office (PPMO)", "egp_portal", "central",
         None, None, "https://bolpatra.gov.np/", "https://bolpatra.gov.np/projects",
-        "generic_html", 1, discovery_status="discovered",
+        "bolpatra_egp", 1, discovery_status="discovered",
         requires_authorization=False, active=True,
         notes="Official public e-GP published-project listing. Public listing scan only; bidder login and restricted bid actions are not accessed.",
     ),
