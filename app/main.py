@@ -9,6 +9,8 @@ from app.database import Base, engine, get_db, SessionLocal
 from app.models import User, Tender, AuditLog
 from app.schemas import LoginInput, TenderCreate, TenderUpdate, TenderOut
 from app.security import hash_password, verify_password, create_access_token, get_current_admin
+from app.collector import collect_public_notices
+from app.collector_scheduler import start_scheduler, stop_scheduler
 
 app = FastAPI(title="Bidders Nepal API", version="1.0.0",
               description="Tender discovery, verification and management API.")
@@ -19,6 +21,7 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=Fals
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    start_scheduler()
     if settings.admin_email and settings.admin_password:
         with SessionLocal() as db:
             user = db.query(User).filter(func.lower(User.email) == settings.admin_email.lower()).first()
@@ -26,6 +29,10 @@ def startup():
                 db.add(User(email=settings.admin_email.lower(),
                             password_hash=hash_password(settings.admin_password), role="admin"))
                 db.commit()
+
+@app.on_event("shutdown")
+def shutdown():
+    stop_scheduler()
 
 @app.get("/")
 def root():
@@ -152,6 +159,13 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
     except (UnicodeDecodeError, csv.Error, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid CSV: {exc}")
+
+@app.post("/api/v1/admin/collector/run")
+def run_collector(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    result = collect_public_notices(db)
+    audit(db, admin, "collector_run", None, str(result))
+    db.commit()
+    return result
 
 @app.get("/api/v1/admin/audit")
 def audit_history(limit: int = Query(50, ge=1, le=200),
