@@ -43,7 +43,8 @@ Open http://127.0.0.1:8000/docs. The first startup creates the admin account fro
 ## Main endpoints
 - GET /health
 - POST /api/v1/auth/login
-- GET /api/v1/tenders?q=&category=&province=&district=&status=open&page=1&page_size=20
+- GET /api/v1/tenders?q=&category=&province=&district=&status=open&page=1&page_size=20 (verified only)
+- GET /api/v1/tenders/all?page=1&page_size=100 (full public record feed: pending + verified; rejected excluded by default)
 - GET /api/v1/tenders/{id}
 - POST /api/v1/admin/tenders (admin)
 - PATCH /api/v1/admin/tenders/{id} (admin)
@@ -51,6 +52,10 @@ Open http://127.0.0.1:8000/docs. The first startup creates the admin account fro
 - POST /api/v1/admin/tenders/{id}/verify?decision=verified (admin)
 - POST /api/v1/admin/tenders/import-csv (admin)
 - GET /api/v1/admin/audit (admin)
+
+### Full tender JSON feed
+
+Use `GET /api/v1/tenders/all` for a direct JSON feed of complete tender records, including pending and verified records. It returns up to 100 records by default (maximum 500 per page), with `total`, `page` and `page_size`. Optional filters include `q`, `category`, `province`, `district`, `status`, and `verification_status`. Rejected records are excluded by default; set `include_rejected=true` to include them, or `verification_status=rejected` to view only rejected records. This is a public feed, so pending records are clearly marked with `verification_status` and should not be treated as verified notices.
 
 ## Admin workflow
 1. POST /api/v1/auth/login with your admin email and password.
