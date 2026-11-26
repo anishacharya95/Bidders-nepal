@@ -20,6 +20,7 @@ from app.schemas import (
 )
 from app.services import cache
 from app.services.classification import PROCUREMENT_TYPES
+from app.api.documents import display_label as _display_label
 from app.services.monitoring import coverage_stats, platform_stats
 from app.services.query import (
     TenderQueryParams,
@@ -412,6 +413,7 @@ def tender_documents(
     items = []
     for row in rows:
         item = TenderDocumentOut.model_validate(row).model_dump(mode="json")
+        item["label"] = _display_label(row.label, row.url)
         item.update(
             {
                 "tender_id": tender_id,

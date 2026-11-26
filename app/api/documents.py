@@ -53,8 +53,20 @@ def _safe_filename(label: str, url: str, content_type: str | None) -> str:
     return f"{base or 'bid-document'}{suffix or '.pdf'}"
 
 
+_HASH_LABEL = re.compile(r"^[0-9a-f]{24,}$", re.IGNORECASE)
+
+
+def display_label(label: str | None, url: str) -> str:
+    """Some feeds publish a hash as the attachment title; show a real label."""
+    value = (label or "").strip()
+    if not value or _HASH_LABEL.match(value):
+        return "Bid document"
+    return value
+
+
 def _document_payload(document: TenderDocument, tender: Tender) -> dict:
     payload = TenderDocumentOut.model_validate(document).model_dump(mode="json")
+    payload["label"] = display_label(document.label, document.url)
     payload.update(
         {
             "tender_id": tender.id,
