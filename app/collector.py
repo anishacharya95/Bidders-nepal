@@ -29,6 +29,12 @@ PPMO_SOURCES = [
 OFFICIAL_SOURCES = [
     "https://www.nea.org.np/en/tender/prequalification",
     "https://www.dor.gov.np/dorfcb",
+    "https://www.doli.gov.np/",
+    "https://dudbc.gov.np/",
+    "https://dwssm.gov.np/",
+    "https://dwri.gov.np/",
+    "https://www.caanepal.gov.np/",
+    "https://www.mofaga.gov.np/",
     "https://bhadrapurmun.gov.np/en/public-procurement-tender-notices",
     "https://damakmun.gov.np/en/public-procurement-tender-notices",
     "https://arjundharamun.gov.np/en/public-procurement-tender-notices",
@@ -49,7 +55,12 @@ ALLOWED_HOSTS = {
     "itaharimun.gov.np", "www.dharan.gov.np", "pokharamun.gov.np",
     "gorkhamun.gov.np", "banepamun.gov.np", "tilottamamun.gov.np",
     "sainamainamun.gov.np", "ramdhunimun.gov.np",
+    "doli.gov.np", "www.doli.gov.np", "dudbc.gov.np", "www.dudbc.gov.np",
+    "dwssm.gov.np", "www.dwssm.gov.np", "dwri.gov.np", "www.dwri.gov.np",
+    "caanepal.gov.np", "www.caanepal.gov.np", "mofaga.gov.np", "www.mofaga.gov.np",
 }
+DISCOVERED_LOCAL_HOSTS: set[str] = set()
+LOCAL_DIRECTORY_URL = "https://www.mofaga.gov.np/"
 NOTICE_PHRASES = (
     "invitation for bid", "invitation for bids", "invitation for electronic",
     "invitation for e-bid", "invitation for e-bids", "inviting tender",
@@ -77,19 +88,64 @@ USER_AGENT = "BiddersNepalNoticeBot/1.2 (+https://bidders-nepal-api.onrender.com
 
 def _allowed(url: str) -> bool:
     parsed = urlparse(url)
-    return parsed.scheme == "https" and (parsed.hostname or "").lower() in ALLOWED_HOSTS
+    host = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and (
+        host in ALLOWED_HOSTS or host.endswith(".gov.np") or host in DISCOVERED_LOCAL_HOSTS
+    )
+
+
+def _discover_local_government_sites() -> list[str]:
+    """Read the Ministry's public local-website directory; never guess hostnames."""
+    discovered: list[str] = []
+    try:
+        response = requests.get(
+            LOCAL_DIRECTORY_URL,
+            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+            timeout=(8, 15),
+        )
+        response.raise_for_status()
+        if (urlparse(response.url).hostname or "").lower() not in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+            return discovered
+        soup = BeautifulSoup(response.text, "html.parser")
+        directory_links = [
+            urljoin(response.url, anchor.get("href", ""))
+            for anchor in soup.select("a[href]")
+            if any(term in anchor.get_text(" ", strip=True).lower()
+                   for term in ("स्थानीय तहका वेबसाइट", "वेवसाईट (स्थानीयतह)", "local level website"))
+        ]
+        for directory_url in directory_links[:5]:
+            if (urlparse(directory_url).hostname or "").lower() not in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+                continue
+            page = requests.get(
+                directory_url,
+                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+                timeout=(8, 15),
+            )
+            page.raise_for_status()
+            if (urlparse(page.url).hostname or "").lower() not in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+                continue
+            directory = BeautifulSoup(page.text, "html.parser")
+            for anchor in directory.select("a[href]"):
+                target = urljoin(page.url, anchor.get("href", "").strip())
+                parsed = urlparse(target)
+                host = (parsed.hostname or "").lower()
+                if parsed.scheme != "https" or not host or host in {"mofaga.gov.np", "www.mofaga.gov.np"}:
+                    continue
+                DISCOVERED_LOCAL_HOSTS.add(host)
+                discovered.append(target.split("#", 1)[0])
+    except Exception as exc:
+        log.warning("Could not refresh MoFAGA local website directory: %s", exc)
+    return list(dict.fromkeys(discovered))
 
 
 def _sources() -> list[str]:
     configured = os.getenv("TENDER_SOURCE_URLS", "")
-    extra = [x.strip() for x in configured.split(",") if x.strip()]
-    # Keep PPMO pagination bounded. Other sources are queried at their public
-    # listing URL; their own pagination is not guessed.
+    extra = [item.strip() for item in configured.split(",") if item.strip()]
     ppmo = [f"{base}?page={page}" for base in PPMO_SOURCES for page in range(1, 6)]
+    local_sites = _discover_local_government_sites()
     return list(dict.fromkeys(
-        url for url in ppmo + OFFICIAL_SOURCES + extra if _allowed(url)
+        url for url in ppmo + OFFICIAL_SOURCES + local_sites + extra if _allowed(url)
     ))
-
 
 def _canonical_url(url: str) -> str:
     parsed = urlparse(url)
