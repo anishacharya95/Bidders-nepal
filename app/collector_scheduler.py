@@ -32,7 +32,9 @@ def start_scheduler():
         return
     interval = max(60, int(os.getenv("TENDER_COLLECT_INTERVAL_MINUTES", "360")))
     _scheduler = BackgroundScheduler(timezone="Asia/Kathmandu", daemon=True)
+    from datetime import datetime, timedelta
     _scheduler.add_job(_run_collection, "interval", minutes=interval,
+                       next_run_time=datetime.now(_scheduler.timezone) + timedelta(seconds=20),
                        id="official-public-tender-discovery", max_instances=1,
                        coalesce=True, replace_existing=True)
     _scheduler.start()
