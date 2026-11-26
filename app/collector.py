@@ -1,9 +1,8 @@
-"""Conservative discovery adapter for public PPMO notice pages.
+"""Conservative discovery adapters for public Nepal procurement notice pages.
 
-This adapter discovers candidate links only. It does not claim PPMO is the
-procuring entity, and every candidate remains pending until an admin checks
-the original notice. No login, CAPTCHA bypass, private API, or protected
-document download is performed.
+Only public, allowlisted pages are fetched. New candidates remain pending until
+an administrator checks the original notice. No login, CAPTCHA bypass, private
+API, or protected document download is performed.
 """
 from __future__ import annotations
 
@@ -21,32 +20,59 @@ from app.models import Tender
 
 log = logging.getLogger(__name__)
 
-# Dedicated procurement categories; the old bid-notices archive contains general notices.
-DEFAULT_SOURCES = [
+# Official public sources. PPMO remains the national source; agency and local
+# government pages add notices that may not be easy to discover centrally.
+PPMO_SOURCES = [
     "https://ppmo.gov.np/category/purchase-notice/",
     "https://ppmo.gov.np/category/bid-notice/",
 ]
-ALLOWED_HOSTS = {"ppmo.gov.np", "www.ppmo.gov.np"}
+OFFICIAL_SOURCES = [
+    "https://www.nea.org.np/en/tender/prequalification",
+    "https://www.dor.gov.np/dorfcb",
+    "https://bhadrapurmun.gov.np/en/public-procurement-tender-notices",
+    "https://damakmun.gov.np/en/public-procurement-tender-notices",
+    "https://arjundharamun.gov.np/en/public-procurement-tender-notices",
+    "https://kankaImun.gov.np/ne/public-procurement-tender-notices",
+    "https://itaharimun.gov.np/ne/public-procurement-tender-notices",
+    "https://www.dharan.gov.np/ne/public-procurement-tender-notices",
+    "https://pokharamun.gov.np/public-procurement-tender-notices",
+    "https://gorkhamun.gov.np/en/public-procurement-tender-notices",
+    "https://banepamun.gov.np/en/public-procurement-tender-notices",
+    "https://tilottamamun.gov.np/en/public-procurement-tender-notices",
+    "https://sainamainamun.gov.np/en/public-procurement-tender-notices",
+    "https://ramdhunimun.gov.np/en/public-procurement-tender-notices",
+]
+ALLOWED_HOSTS = {
+    "ppmo.gov.np", "www.ppmo.gov.np", "nea.org.np", "www.nea.org.np",
+    "dor.gov.np", "www.dor.gov.np", "bhadrapurmun.gov.np",
+    "damakmun.gov.np", "arjundharamun.gov.np", "kankaImun.gov.np",
+    "itaharimun.gov.np", "www.dharan.gov.np", "pokharamun.gov.np",
+    "gorkhamun.gov.np", "banepamun.gov.np", "tilottamamun.gov.np",
+    "sainamainamun.gov.np", "ramdhunimun.gov.np",
+}
 NOTICE_PHRASES = (
     "invitation for bid", "invitation for bids", "invitation for electronic",
-    "inviting tender", "inviting quotation", "request for proposal",
-    "sealed quotation notice", "tender notice", "bid notice",
-    "procurement of", "supply of", "construction of",
+    "invitation for e-bid", "invitation for e-bids", "inviting tender",
+    "inviting quotation", "request for proposal", "request for expression",
+    "sealed quotation", "sealed bid", "tender notice", "bid notice",
+    "procurement of", "supply of", "construction of", "e-bid",
     "बोलपत्र आह्वान", "बोलपत्रको आह्वान", "बोलपत्र-आह्वान",
-    "बोलपत्र आव्हान", "दरभाउपत्र आह्वान", "दरभाउपत्रको आह्वान",
-    "दरभाउपत्र आव्हान", "सिलबन्दी दरभाउपत्र आह्वान",
-    "आशयपत्र (eoi) आह्वान", "eoi सम्बन्धी सूचना",
+    "बोलपत्र आब्हान", "बोलपत्र आव्हान", "दरभाउपत्र आह्वान",
+    "दरभाउपत्रको आह्वान", "सिलबन्दी दरभाउपत्र", "आशयपत्र (eoi) आह्वान",
+    "eoi सम्बन्धी सूचना",
 )
 NON_TENDER_PHRASES = (
     "registration procedure", "registration manual", "user manual",
     "bidder registration", "e-gp system", "submission deadline",
-    "extension of the tender", "extension of bid", "public holiday",
+    "extension of the tender", "extension of bid", "deadline extension",
+    "contract award", "award notice", "letter of intent", "notice of intent",
+    "bid opening", "tender cancellation", "amendment", "addendum",
+    "clarification", "shortlisted consulting", "public holiday",
     "म्याद थप", "म्याद नपर्ने", "प्रक्रिया पुस्तिका", "दर्ता प्रक्रिया",
-    "प्रणालीमा बोलपत्र पेश", "जानकारी सम्बन्धी", "संशोधित सूचना",
-    "revised notice", "extension of", "deadline extension",
+    "संशोधित सूचना", "बोलपत्र स्वीकृत", "आशयको सूचना", "बोलपत्र खोलेको",
+    "ठेक्का स्वीकृत",
 )
-SKIP_WORDS = ("login", "register", "contact", "privacy", "career", "result", "blacklist")
-USER_AGENT = "BiddersNepalNoticeBot/1.1 (+https://bidders-nepal-api.onrender.com; public notice discovery)"
+USER_AGENT = "BiddersNepalNoticeBot/1.2 (+https://bidders-nepal-api.onrender.com; public notice discovery)"
 
 
 def _allowed(url: str) -> bool:
@@ -56,57 +82,44 @@ def _allowed(url: str) -> bool:
 
 def _sources() -> list[str]:
     configured = os.getenv("TENDER_SOURCE_URLS", "")
-    bases = [x.strip() for x in configured.split(",") if x.strip()] if configured else DEFAULT_SOURCES
-    # PPMO paginates these category listings; inspect a bounded recent window.
-    sources = []
-    for base in bases:
-        if not _allowed(base):
-            continue
-        sources.extend("{}?page={}".format(base, page) for page in range(1, 6))
-    return list(dict.fromkeys(url for url in sources if _allowed(url)))
+    extra = [x.strip() for x in configured.split(",") if x.strip()]
+    # Keep PPMO pagination bounded. Other sources are queried at their public
+    # listing URL; their own pagination is not guessed.
+    ppmo = [f"{base}?page={page}" for base in PPMO_SOURCES for page in range(1, 6)]
+    return list(dict.fromkeys(
+        url for url in ppmo + OFFICIAL_SOURCES + extra if _allowed(url)
+    ))
 
 
 def _canonical_url(url: str) -> str:
-    """Normalize harmless URL differences without dropping meaningful query parameters."""
     parsed = urlparse(url)
     return urlunparse((parsed.scheme.lower(), (parsed.hostname or "").lower(),
                        parsed.path.rstrip("/") or "/", parsed.params, parsed.query, ""))
 
 
-def _is_notice_detail_url(url: str) -> bool:
-    """Accept individual PPMO content pages, never category/navigation pages."""
-    return bool(re.match(r"^/content/\d+/", urlparse(url).path))
-
-
-def _looks_like_notice(text: str, href: str = "") -> bool:
-    """Classify from the link title only; parent/category text creates false positives."""
+def _looks_like_notice(text: str) -> bool:
     title = " ".join((text or "").split()).lower()
-    if not title or any(word in title for word in NON_TENDER_PHRASES):
-        return False
-    if any(word in title for word in ("login", "register", "contact", "privacy", "career", "blacklist")):
+    if not title or any(phrase in title for phrase in NON_TENDER_PHRASES):
         return False
     return any(phrase in title for phrase in NOTICE_PHRASES)
 
 
 def _organization_from_title(text: str) -> str:
-    """Extract an organization only when a clear Nepali possessive prefix exists."""
     title = " ".join((text or "").split())
     match = re.match(
         r"^(?:श्री\s*)?(.+?)(?:को|का)\s+(?=(?:पुनः\s*)?(?:बोलपत्र|दरभाउपत्र|आशयपत्र|eoi))",
-        title,
-        re.IGNORECASE,
+        title, re.IGNORECASE,
     )
     if not match:
         return "Not identified - admin review required"
     organization = match.group(1).strip(" ,।-")
-    if len(organization) < 3 or len(organization) > 300:
-        return "Not identified - admin review required"
-    return organization
+    return organization if 3 <= len(organization) <= 300 else "Not identified - admin review required"
 
 
 def _notice_number(text: str) -> str | None:
     patterns = [
         r"\b(?:IFB|RFP|EOI|PQ|NCB|SQ)[\w./() -]{3,70}",
+        r"\b[A-Z]{2,}[A-Z0-9./()_-]{2,}(?:/[A-Z0-9._-]+){1,5}\b",
         r"\b\d{2,4}/\d{2,4}(?:/\d{2,4})?\b",
     ]
     for pattern in patterns:
@@ -130,7 +143,6 @@ def _category(text: str) -> str:
 
 
 def _deadline(text: str) -> datetime | None:
-    """Parse only unambiguous dates; leave other formats for human review."""
     patterns = (
         r"\b(20\d{2}-\d{2}-\d{2})\b",
         r"\b(\d{1,2}\s+[A-Za-z]{3,9}\s+20\d{2})\b",
@@ -150,56 +162,105 @@ def _deadline(text: str) -> datetime | None:
     return None
 
 
+def _source_name(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    names = {
+        "ppmo.gov.np": "PPMO", "www.ppmo.gov.np": "PPMO",
+        "nea.org.np": "Nepal Electricity Authority", "www.nea.org.np": "Nepal Electricity Authority",
+        "dor.gov.np": "Department of Roads", "www.dor.gov.np": "Department of Roads",
+    }
+    if host in names:
+        return names[host]
+    return host.replace("www.", "").split(".")[0].replace("mun", "").title() + " Municipality"
+
+
+def _candidate_rows(soup: BeautifulSoup, page_url: str):
+    """Yield (title, organization, notice number, deadline, original link)."""
+    host = (urlparse(page_url).hostname or "").lower()
+    if host in {"nea.org.np", "www.nea.org.np"}:
+        # NEA's public register is a structured table: office, tender no.,
+        # tender name, document links, status, and close date.
+        for row in soup.select("table tr"):
+            cells = row.find_all(["td", "th"], recursive=False)
+            if len(cells) < 6:
+                continue
+            values = [" ".join(cell.get_text(" ", strip=True).split()) for cell in cells]
+            if len(values) < 7 or not values[2] or not values[3]:
+                continue
+            title, office, number = values[3], values[1], values[2]
+            if not _looks_like_notice(title) and not _looks_like_notice(number + " " + title):
+                # NEA titles often omit the phrase "tender"; table placement
+                # itself identifies them as tender register entries.
+                if len(title) < 12:
+                    continue
+            links = cells[4].select("a[href]")
+            link = urljoin(page_url, links[0]["href"]) if links else page_url
+            yield title, office, number, _deadline(values[-1]), link
+        return
+
+    for anchor in soup.select("a[href]"):
+        title = " ".join(anchor.get_text(" ", strip=True).split())
+        if len(title) < 12 or len(title) > 500 or not _looks_like_notice(title):
+            continue
+        link = _canonical_url(urljoin(page_url, (anchor.get("href") or "").strip()))
+        if not _allowed(link) or link == _canonical_url(page_url):
+            continue
+        if host in {"ppmo.gov.np", "www.ppmo.gov.np"} and not re.match(r"^/content/\d+/", urlparse(link).path):
+            continue
+        yield title, _organization_from_title(title), _notice_number(title), _deadline(title), link
+
+
+def _duplicate(db: Session, url: str, notice: str | None, title: str, organization: str) -> bool:
+    existing_urls = db.query(Tender.id).filter(Tender.source_url == url).first()
+    if existing_urls:
+        return True
+    if notice:
+        # Cross-source notice numbers are the strongest duplicate key.
+        for row in db.query(Tender.id).filter(Tender.notice_number.isnot(None)).all():
+            pass
+        if db.query(Tender).filter(Tender.notice_number.ilike(notice)).first():
+            return True
+    # Conservative fallback only when both title and organization are known.
+    if organization and "admin review" not in organization.lower():
+        if db.query(Tender).filter(
+            Tender.title.ilike(title), Tender.organization_name.ilike(organization)
+        ).first():
+            return True
+    return False
+
+
 def collect_public_notices(db: Session) -> dict:
-    """Fetch allowlisted public pages and insert unseen candidates as pending."""
+    """Fetch allowlisted official pages and insert unseen candidates as pending."""
     discovered = inserted = duplicates = failed = 0
     checked_at = datetime.now(timezone.utc)
     sources = _sources()
     for source_url in sources:
         try:
             response = requests.get(
-                source_url,
-                headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-                timeout=(8, 20),
-                allow_redirects=True,
+                source_url, headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
+                timeout=(8, 20), allow_redirects=True,
             )
             response.raise_for_status()
             if not _allowed(response.url):
-                raise ValueError("Redirected outside the approved PPMO host")
+                raise ValueError("Redirected outside approved public-source hosts")
             if "text/html" not in response.headers.get("Content-Type", "").lower():
                 continue
             soup = BeautifulSoup(response.text, "html.parser")
-            for anchor in soup.select("a[href]"):
-                anchor_text = " ".join(anchor.get_text(" ", strip=True).split())
-                target = _canonical_url(urljoin(response.url, (anchor.get("href", "") or "").strip()))
-                if not anchor_text or len(anchor_text) < 12 or len(anchor_text) > 500 or not _allowed(target):
-                    continue
-                if not _is_notice_detail_url(target) or not _looks_like_notice(anchor_text, target):
-                    continue
+            for title, organization, notice, deadline, target in _candidate_rows(soup, response.url):
                 discovered += 1
-                known_urls = {
-                    _canonical_url((value or "").strip())
-                    for (value,) in db.query(Tender.source_url).filter(Tender.source_url.isnot(None)).all()
-                    if (value or "").strip()
-                }
-                if target in known_urls:
+                if _duplicate(db, target, notice, title, organization):
                     duplicates += 1
                     continue
-                notice = _notice_number(anchor_text)
-                if notice and db.query(Tender).filter(Tender.notice_number == notice).first():
-                    duplicates += 1
-                    continue
-                deadline = _deadline(anchor_text)
                 db.add(Tender(
-                    title=anchor_text[:500],
-                    organization_name=_organization_from_title(anchor_text),
+                    title=title[:500],
+                    organization_name=(organization or "Not identified - admin review required")[:300],
                     notice_number=notice,
-                    category=_category(anchor_text),
-                    description=("Discovered on a public PPMO page. The procuring entity, "
-                                  "deadline, eligibility and documents must be checked against "
-                                  "the original notice before verification."),
+                    category=_category(title),
+                    description=("Discovered from a public official procurement page. Verify the "
+                                 "procuring entity, deadline, eligibility and documents against "
+                                 "the original notice before publication."),
                     deadline=deadline,
-                    source_name="PPMO procurement-notice category (discovery source)",
+                    source_name=_source_name(response.url),
                     source_url=target,
                     verification_status="pending",
                     status="open",
@@ -217,5 +278,5 @@ def collect_public_notices(db: Session) -> dict:
         "inserted_pending_review": inserted,
         "duplicates_skipped": duplicates,
         "source_errors": failed,
-        "message": "Discovered links are candidates, not confirmed tenders. Verify the original notice before publication.",
+        "message": "Official public-source candidates only; verify each original notice before publication.",
     }
