@@ -1,6 +1,7 @@
 import csv, io
 from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
@@ -43,11 +44,22 @@ def health():
     return {"status": "ok", "service": "bidders-nepal-api",
             "time": datetime.now(timezone.utc).isoformat()}
 
+def authenticate_user(email: str, password: str, db: Session):
+    user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
+    if not user or not user.is_active or not verify_password(password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    return user
+
 @app.post("/api/v1/auth/login")
 def login(payload: LoginInput, db: Session = Depends(get_db)):
-    user = db.query(User).filter(func.lower(User.email) == payload.email.lower()).first()
-    if not user or not user.is_active or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    """JSON login for apps and API clients."""
+    user = authenticate_user(payload.email, payload.password, db)
+    return {"access_token": create_access_token(user), "token_type": "bearer"}
+
+@app.post("/api/v1/auth/token")
+def oauth_token(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """OAuth2 form login used by Swagger's Authorize button. Enter the admin email as username."""
+    user = authenticate_user(form.username, form.password, db)
     return {"access_token": create_access_token(user), "token_type": "bearer"}
 
 def audit(db, admin, action, tender_id, details=None):
