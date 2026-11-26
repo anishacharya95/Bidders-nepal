@@ -57,9 +57,14 @@ _HASH_LABEL = re.compile(r"^[0-9a-f]{24,}$", re.IGNORECASE)
 
 
 def display_label(label: str | None, url: str) -> str:
-    """Some feeds publish a hash as the attachment title; show a real label."""
+    """Some feeds publish a hash as the attachment title; show a real label.
+
+    The source often stores the file as ``<sha256>.pdf``, so the extension is
+    removed before testing whether the name is really just a hash.
+    """
     value = (label or "").strip()
-    if not value or _HASH_LABEL.match(value):
+    stem = re.sub(r"\.[a-z0-9]{2,5}$", "", value, flags=re.IGNORECASE)
+    if not value or _HASH_LABEL.match(stem):
         return "Bid document"
     return value
 
