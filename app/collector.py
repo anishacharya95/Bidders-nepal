@@ -65,7 +65,7 @@ def _canonical_url(url: str) -> str:
 
 def _is_notice_detail_url(url: str) -> bool:
     """Accept individual PPMO content pages, never category/navigation pages."""
-    return bool(re.match(r"^/content/\\d+/", urlparse(url).path))
+    return bool(re.match(r"^/content/\d+/", urlparse(url).path))
 
 
 def _looks_like_notice(text: str, href: str = "") -> bool:
