@@ -31,7 +31,7 @@ OFFICIAL_SOURCES = [
     "https://www.dor.gov.np/dorfcb",
     "https://www.doli.gov.np/",
     "https://dudbc.gov.np/",
-    "https://dwssm.gov.np/",
+    "https://dwssm.gov.np/category/tender-notice/",
     "https://dwri.gov.np/",
     "https://www.caanepal.gov.np/",
     "https://www.mofaga.gov.np/",
@@ -67,10 +67,11 @@ NOTICE_PHRASES = (
     "inviting quotation", "request for proposal", "request for expression",
     "sealed quotation", "sealed bid", "tender notice", "bid notice",
     "procurement of", "supply of", "construction of", "e-bid",
+    "bid document", "bidding document", "bid docs", "tender document",
     "बोलपत्र आह्वान", "बोलपत्रको आह्वान", "बोलपत्र-आह्वान",
     "बोलपत्र आब्हान", "बोलपत्र आव्हान", "दरभाउपत्र आह्वान",
     "दरभाउपत्रको आह्वान", "सिलबन्दी दरभाउपत्र", "आशयपत्र (eoi) आह्वान",
-    "eoi सम्बन्धी सूचना",
+    "eoi सम्बन्धी सूचना", "बोलपत्र कागजात", "बोलपत्र दस्तावेज",
 )
 NON_TENDER_PHRASES = (
     "registration procedure", "registration manual", "user manual",
