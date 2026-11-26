@@ -7,7 +7,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import Base, engine, get_db, SessionLocal
-from app.models import User, Tender, AuditLog
+from app.models import User, Tender, AuditLog, CollectorSource
 from app.schemas import LoginInput, TenderCreate, TenderUpdate, TenderOut
 from app.security import hash_password, verify_password, create_access_token, get_current_admin
 from app.collector import collect_public_notices
@@ -204,6 +204,29 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
     except (UnicodeDecodeError, csv.Error, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid CSV: {exc}")
+
+@app.get("/api/v1/admin/collector/coverage")
+def collector_coverage(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
+    """Coverage and health of every source the collector has attempted to scan."""
+    rows = db.query(CollectorSource).order_by(CollectorSource.source_name.asc()).all()
+    counts = {"ok": 0, "error": 0, "never_checked": 0}
+    for row in rows:
+        counts[row.status if row.status in counts else "never_checked"] += 1
+    return {
+        "registered_sources": len(rows),
+        "healthy_sources": counts["ok"],
+        "failed_sources": counts["error"],
+        "never_checked_sources": counts["never_checked"],
+        "sources": [{
+            "name": row.source_name, "url": row.url, "status": row.status,
+            "last_checked_at": row.last_checked_at, "last_success_at": row.last_success_at,
+            "last_error": row.last_error, "notices_found": row.notices_found,
+            "documents_found": row.documents_found,
+            "consecutive_failures": row.consecutive_failures,
+        } for row in rows],
+        "coverage_note": "This counts discovered/registered sources, not proof that all 753 local governments are integrated."
+    }
+
 
 @app.post("/api/v1/admin/collector/run")
 def run_collector(db: Session = Depends(get_db), admin: User = Depends(get_current_admin)):
