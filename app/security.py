@@ -9,7 +9,7 @@ from app.database import get_db
 from app.models import User
 
 password_hash = PasswordHash.recommended()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 def hash_password(password: str) -> str:
     return password_hash.hash(password)
