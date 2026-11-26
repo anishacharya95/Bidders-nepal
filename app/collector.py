@@ -21,9 +21,10 @@ from app.models import Tender
 
 log = logging.getLogger(__name__)
 
+# Dedicated procurement categories; the old bid-notices archive contains general notices.
 DEFAULT_SOURCES = [
-    "https://ppmo.gov.np/category/bid-notices/",
-    "https://ppmo.gov.np/",
+    "https://ppmo.gov.np/category/purchase-notice/",
+    "https://ppmo.gov.np/category/bid-notice/",
 ]
 ALLOWED_HOSTS = {"ppmo.gov.np", "www.ppmo.gov.np"}
 NOTICE_PHRASES = (
@@ -31,15 +32,18 @@ NOTICE_PHRASES = (
     "inviting tender", "inviting quotation", "request for proposal",
     "sealed quotation notice", "tender notice", "bid notice",
     "procurement of", "supply of", "construction of",
-    "बोलपत्र आह्वान", "बोलपत्रको आह्वान", "दरभाउपत्र आह्वान",
-    "दरभाउपत्रको आह्वान", "सिलबन्दी दरभाउपत्र आह्वान",
+    "बोलपत्र आह्वान", "बोलपत्रको आह्वान", "बोलपत्र-आह्वान",
+    "बोलपत्र आव्हान", "दरभाउपत्र आह्वान", "दरभाउपत्रको आह्वान",
+    "दरभाउपत्र आव्हान", "सिलबन्दी दरभाउपत्र आह्वान",
+    "आशयपत्र (eoi) आह्वान", "eoi सम्बन्धी सूचना",
 )
 NON_TENDER_PHRASES = (
     "registration procedure", "registration manual", "user manual",
     "bidder registration", "e-gp system", "submission deadline",
     "extension of the tender", "extension of bid", "public holiday",
     "म्याद थप", "म्याद नपर्ने", "प्रक्रिया पुस्तिका", "दर्ता प्रक्रिया",
-    "प्रणालीमा बोलपत्र पेश", "जानकारी सम्बन्धी",
+    "प्रणालीमा बोलपत्र पेश", "जानकारी सम्बन्धी", "संशोधित सूचना",
+    "revised notice", "extension of", "deadline extension",
 )
 SKIP_WORDS = ("login", "register", "contact", "privacy", "career", "result", "blacklist")
 USER_AGENT = "BiddersNepalNoticeBot/1.1 (+https://bidders-nepal-api.onrender.com; public notice discovery)"
@@ -52,7 +56,13 @@ def _allowed(url: str) -> bool:
 
 def _sources() -> list[str]:
     configured = os.getenv("TENDER_SOURCE_URLS", "")
-    sources = [x.strip() for x in configured.split(",") if x.strip()] if configured else DEFAULT_SOURCES
+    bases = [x.strip() for x in configured.split(",") if x.strip()] if configured else DEFAULT_SOURCES
+    # PPMO paginates these category listings; inspect a bounded recent window.
+    sources = []
+    for base in bases:
+        if not _allowed(base):
+            continue
+        sources.extend("{}?page={}".format(base, page) for page in range(1, 6))
     return list(dict.fromkeys(url for url in sources if _allowed(url)))
 
 
@@ -78,6 +88,22 @@ def _looks_like_notice(text: str, href: str = "") -> bool:
     return any(phrase in title for phrase in NOTICE_PHRASES)
 
 
+def _organization_from_title(text: str) -> str:
+    """Extract an organization only when a clear Nepali possessive prefix exists."""
+    title = " ".join((text or "").split())
+    match = re.match(
+        r"^(?:श्री\s*)?(.+?)(?:को|का)\s+(?=(?:पुनः\s*)?(?:बोलपत्र|दरभाउपत्र|आशयपत्र|eoi))",
+        title,
+        re.IGNORECASE,
+    )
+    if not match:
+        return "Not identified - admin review required"
+    organization = match.group(1).strip(" ,।-")
+    if len(organization) < 3 or len(organization) > 300:
+        return "Not identified - admin review required"
+    return organization
+
+
 def _notice_number(text: str) -> str | None:
     patterns = [
         r"\b(?:IFB|RFP|EOI|PQ|NCB|SQ)[\w./() -]{3,70}",
@@ -92,13 +118,13 @@ def _notice_number(text: str) -> str | None:
 
 def _category(text: str) -> str:
     value = text.lower()
-    if any(x in value for x in ("consultancy", "consultant", "expression of interest", "eoi")):
+    if any(x in value for x in ("consultancy", "consultant", "expression of interest", "eoi", "परामर्श", "आशयपत्र")):
         return "Consultancy"
-    if any(x in value for x in ("goods", "supply", "procurement of", "purchase")):
+    if any(x in value for x in ("goods", "supply", "procurement of", "purchase", "आपूर्ति", "सामग्री")):
         return "Goods"
-    if any(x in value for x in ("construction", "road", "building", "bridge", "works")):
+    if any(x in value for x in ("construction", "road", "building", "bridge", "works", "निर्माण", "सडक", "भवन")):
         return "Works"
-    if any(x in value for x in ("service", "maintenance", "cleaning")):
+    if any(x in value for x in ("service", "maintenance", "cleaning", "सेवा")):
         return "Services"
     return "Other"
 
@@ -166,14 +192,14 @@ def collect_public_notices(db: Session) -> dict:
                 deadline = _deadline(anchor_text)
                 db.add(Tender(
                     title=anchor_text[:500],
-                    organization_name="Not identified - admin review required",
+                    organization_name=_organization_from_title(anchor_text),
                     notice_number=notice,
                     category=_category(anchor_text),
                     description=("Discovered on a public PPMO page. The procuring entity, "
                                   "deadline, eligibility and documents must be checked against "
                                   "the original notice before verification."),
                     deadline=deadline,
-                    source_name="PPMO public website (discovery source)",
+                    source_name="PPMO procurement-notice category (discovery source)",
                     source_url=target,
                     verification_status="pending",
                     status="open",
