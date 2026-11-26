@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Query as SqlQuery
 from sqlalchemy.orm import Session, selectinload
@@ -18,6 +18,8 @@ from app.schemas import (
     TenderDocumentOut,
     TenderOut,
 )
+from app.services import cache
+from app.services.classification import PROCUREMENT_TYPES
 from app.services.monitoring import coverage_stats, platform_stats
 from app.services.query import (
     TenderQueryParams,
@@ -29,7 +31,16 @@ from app.services.query import (
 
 router = APIRouter(prefix="/api/v1", tags=["tenders"])
 
-SortKey = Literal["newest", "oldest", "closing", "deadline", "updated"]
+SortKey = Literal[
+    "newest", "oldest", "closing", "deadline", "updated", "organization", "published"
+]
+StatusFilter = Literal[
+    "open", "active", "closed", "expired", "cancelled", "awarded", "past"
+]
+
+CACHE_HEADER = {
+    "Cache-Control": "public, max-age=20, stale-while-revalidate=40",
+}
 
 
 def _empty(value: str | None) -> str | None:
@@ -48,10 +59,15 @@ def _filters(
     *,
     q: str | None = None,
     category: str | None = None,
+    procurement_type: str | None = None,
     province: str | None = None,
     district: str | None = None,
     municipality: str | None = None,
     organization: str | None = None,
+    ministry: str | None = None,
+    department: str | None = None,
+    notice_number: str | None = None,
+    source: str | None = None,
     status: str | None = None,
     verification_status: str | None = None,
     has_documents: bool | None = None,
@@ -59,16 +75,22 @@ def _filters(
     published_to: datetime | None = None,
     deadline_from: datetime | None = None,
     deadline_to: datetime | None = None,
+    expiring_days: int | None = None,
     include_rejected: bool = False,
     ids: list[int] | None = None,
 ) -> TenderQueryParams:
     return TenderQueryParams(
         q=_empty(q),
         category=_empty(category),
+        procurement_type=_empty(procurement_type),
         province=_empty(province),
         district=_empty(district),
         municipality=_empty(municipality),
         organization=_empty(organization),
+        ministry=_empty(ministry),
+        department=_empty(department),
+        notice_number=_empty(notice_number),
+        source=_empty(source),
         status=_empty(status),
         verification_status=_empty(verification_status),
         has_documents=has_documents,
@@ -76,14 +98,143 @@ def _filters(
         published_to=published_to,
         deadline_from=deadline_from,
         deadline_to=deadline_to,
+        expiring_days=expiring_days,
         include_rejected=include_rejected,
         ids=ids,
     )
 
 
+def _echo(params: TenderQueryParams, sort: str) -> dict:
+    """Filters actually applied, returned with every search response."""
+    applied = {
+        key: value
+        for key, value in {
+            "q": params.q,
+            "category": params.category,
+            "procurement_type": params.procurement_type,
+            "province": params.province,
+            "district": params.district,
+            "municipality": params.municipality,
+            "organization": params.organization,
+            "ministry": params.ministry,
+            "department": params.department,
+            "notice_number": params.notice_number,
+            "source": params.source,
+            "status": params.status,
+            "verification_status": params.verification_status,
+            "has_documents": params.has_documents,
+            "expiring_days": params.expiring_days,
+        }.items()
+        if value not in (None, "")
+    }
+    return {"applied_filters": applied, "sort": sort}
+
+
+def _search(
+    db: Session,
+    params: TenderQueryParams,
+    *,
+    sort: str,
+    page: int,
+    page_size: int,
+    response: Response | None = None,
+    with_facets: bool = False,
+) -> dict:
+    query = apply_sort(apply_filters(db.query(Tender), params), sort)
+    total, rows = paginate(_query_with_documents(query), page, page_size)
+    payload = {
+        "items": _serialise(rows),
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": max(1, (total + page_size - 1) // page_size),
+        **_echo(params, sort),
+    }
+    if with_facets:
+        payload["facets"] = {
+            "categories": value_counts(db, Tender.category, params),
+            "procurement_types": value_counts(db, Tender.procurement_type, params),
+            "provinces": value_counts(db, Tender.province, params),
+            "districts": value_counts(db, Tender.district, params, limit=40),
+        }
+    if response is not None:
+        response.headers.update(CACHE_HEADER)
+    return payload
+
+
+@router.get("/search")
+def search_tenders(
+    response: Response,
+    q: str | None = Query(default=None, description="Title, notice number, organisation, description, place"),
+    title: str | None = Query(default=None, description="Title/keyword only"),
+    notice_number: str | None = Query(default=None, description="Tender ID / notice number"),
+    organization: str | None = None,
+    ministry: str | None = None,
+    department: str | None = None,
+    category: str | None = None,
+    procurement_type: str | None = None,
+    province: str | None = None,
+    district: str | None = None,
+    municipality: str | None = None,
+    source: str | None = Query(default=None, description="Source website name or host"),
+    status: StatusFilter | None = Query(default=None, description="open/active/closed/expired/…"),
+    verification_status: str | None = Query(default=None, pattern="^(pending|verified|rejected)$"),
+    has_documents: bool | None = None,
+    published_from: datetime | None = None,
+    published_to: datetime | None = None,
+    deadline_from: datetime | None = None,
+    deadline_to: datetime | None = None,
+    expiring_days: int | None = Query(default=None, ge=1, le=90),
+    include_rejected: bool = False,
+    facets: bool = False,
+    sort: SortKey = "newest",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Combined tender search with every filter supported by the database."""
+    params = _filters(
+        q=_empty(title) or q,
+        category=category,
+        procurement_type=procurement_type,
+        province=province,
+        district=district,
+        municipality=municipality,
+        organization=organization,
+        ministry=ministry,
+        department=department,
+        notice_number=notice_number,
+        source=source,
+        status=status,
+        verification_status=verification_status,
+        has_documents=has_documents,
+        published_from=published_from,
+        published_to=published_to,
+        deadline_from=deadline_from,
+        deadline_to=deadline_to,
+        expiring_days=expiring_days,
+        include_rejected=include_rejected,
+    )
+    return _search(
+        db,
+        params,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+        response=response,
+        with_facets=facets,
+    )
+
+
 @router.get("/tenders/all")
 def list_all_tenders(
+    response: Response,
     q: str | None = None,
+    notice_number: str | None = None,
+    procurement_type: str | None = None,
+    ministry: str | None = None,
+    department: str | None = None,
+    source: str | None = None,
     category: str | None = None,
     province: str | None = None,
     district: str | None = None,
@@ -97,6 +248,7 @@ def list_all_tenders(
     published_to: datetime | None = None,
     deadline_from: datetime | None = None,
     deadline_to: datetime | None = None,
+    expiring_days: int | None = Query(default=None, ge=1, le=90),
     ids: str | None = Query(
         default=None,
         description="Comma-separated tender ids (max 200), used by saved lists.",
@@ -119,10 +271,15 @@ def list_all_tenders(
     params = _filters(
         q=q,
         category=category,
+        procurement_type=procurement_type,
         province=province,
         district=district,
         municipality=municipality,
         organization=organization,
+        ministry=ministry,
+        department=department,
+        notice_number=notice_number,
+        source=source,
         status=status,
         verification_status=verification_status,
         has_documents=has_documents,
@@ -130,28 +287,26 @@ def list_all_tenders(
         published_to=published_to,
         deadline_from=deadline_from,
         deadline_to=deadline_to,
+        expiring_days=expiring_days,
         include_rejected=include_rejected,
         ids=selected_ids,
     )
-    query = apply_sort(apply_filters(db.query(Tender), params), sort)
-    total, rows = paginate(_query_with_documents(query), page, page_size)
-    return {
-        "items": _serialise(rows),
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "sort": sort,
-    }
+    return _search(db, params, sort=sort, page=page, page_size=page_size, response=response)
 
 
 @router.get("/tenders")
 def list_tenders(
+    response: Response,
     q: str | None = None,
     category: str | None = None,
+    procurement_type: str | None = None,
     province: str | None = None,
     district: str | None = None,
     municipality: str | None = None,
     organization: str | None = None,
+    ministry: str | None = None,
+    department: str | None = None,
+    source: str | None = None,
     status: str | None = "open",
     has_documents: bool | None = None,
     verified_only: bool = Query(
@@ -166,31 +321,23 @@ def list_tenders(
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    """Public listing; pass ``verified_only=true`` for the reviewed-only feed.
-
-    This endpoint used to hard-code the verified filter, which made it return an
-    empty page whenever no administrator had reviewed the collected notices yet.
-    """
+    """Public listing; pass ``verified_only=true`` for the reviewed-only feed."""
     params = _filters(
         q=q,
         category=category,
+        procurement_type=procurement_type,
         province=province,
         district=district,
         municipality=municipality,
         organization=organization,
+        ministry=ministry,
+        department=department,
+        source=source,
         status=status or None,
         verification_status="verified" if verified_only else None,
         has_documents=has_documents,
     )
-    query = apply_sort(apply_filters(db.query(Tender), params), sort)
-    total, rows = paginate(_query_with_documents(query), page, page_size)
-    return {
-        "items": _serialise(rows),
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "sort": sort,
-    }
+    return _search(db, params, sort=sort, page=page, page_size=page_size, response=response)
 
 
 @router.get("/tenders/latest")
@@ -247,20 +394,45 @@ def tender_detail(tender_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/tenders/{tender_id:int}/documents")
-def tender_documents(tender_id: int, db: Session = Depends(get_db)):
+def tender_documents(
+    tender_id: int,
+    document_type: str | None = None,
+    available_only: bool = False,
+    db: Session = Depends(get_db),
+):
     tender = db.get(Tender, tender_id)
     if not tender or tender.verification_status == "rejected":
         raise HTTPException(status_code=404, detail="Tender not found")
-    rows = (
-        db.query(TenderDocument)
-        .filter(TenderDocument.tender_id == tender_id)
-        .order_by(TenderDocument.id.asc())
-        .all()
-    )
+    query = db.query(TenderDocument).filter(TenderDocument.tender_id == tender_id)
+    if document_type:
+        query = query.filter(TenderDocument.document_type == document_type)
+    if available_only:
+        query = query.filter(TenderDocument.is_available.is_(True))
+    rows = query.order_by(TenderDocument.id.asc()).all()
+    items = []
+    for row in rows:
+        item = TenderDocumentOut.model_validate(row).model_dump(mode="json")
+        item.update(
+            {
+                "tender_id": tender_id,
+                "preview_url": f"/api/v1/documents/{row.id}/preview",
+                "download_url": f"/api/v1/documents/{row.id}/download",
+                "viewer_url": f"/api/v1/documents/{row.id}/viewer",
+                "availability": (
+                    "available"
+                    if row.is_available
+                    else "unavailable"
+                    if row.is_available is False
+                    else row.download_status or "unverified"
+                ),
+            }
+        )
+        items.append(item)
     return {
         "tender_id": tender_id,
-        "items": [TenderDocumentOut.model_validate(row).model_dump(mode="json") for row in rows],
-        "count": len(rows),
+        "items": items,
+        "count": len(items),
+        "available_count": sum(1 for row in rows if row.is_available),
         "source_url": tender.source_url,
     }
 
@@ -309,14 +481,19 @@ def tender_sources(tender_id: int, db: Session = Depends(get_db)):
 
 @router.get("/categories")
 def categories(
+    response: Response,
     province: str | None = None,
     district: str | None = None,
     verification_status: str | None = Query(default=None, pattern="^(pending|verified|rejected)$"),
     db: Session = Depends(get_db),
 ):
     params = _filters(province=province, district=district, verification_status=verification_status)
+    response.headers.update(CACHE_HEADER)
     return {
-        "items": value_counts(db, Tender.category, params),
+        "items": cache.get_or_set(
+            "categories", {"province": province, "district": district, "v": verification_status},
+            lambda: value_counts(db, Tender.category, params),
+        ),
         "note": "Counts follow the same filters as /tenders/all unless verification_status is supplied.",
     }
 
@@ -362,8 +539,9 @@ def organizations(
 
 
 @router.get("/stats")
-def stats(db: Session = Depends(get_db)):
-    payload = platform_stats(db)
+def stats(response: Response, db: Session = Depends(get_db)):
+    response.headers.update(CACHE_HEADER)
+    payload = cache.get_or_set("stats", None, lambda: platform_stats(db))
     return {
         "tenders": payload["tenders"],
         "sources": payload["sources"],
@@ -375,22 +553,26 @@ def stats(db: Session = Depends(get_db)):
 
 
 @router.get("/coverage")
-def coverage(db: Session = Depends(get_db)):
-    payload = coverage_stats(db)
-    source_rows = db.query(Source)
-    payload["sources"] = {
-        "registered": source_rows.count(),
-        "active": source_rows.filter(Source.active.is_(True)).count(),
-        "failing": source_rows.filter(Source.consecutive_failures > 0).count(),
-        "requires_authorization": source_rows.filter(Source.requires_authorization.is_(True)).count(),
-        "never_scanned": source_rows.filter(Source.last_checked_at.is_(None)).count(),
-        "local_governments": source_rows.filter(
-            Source.source_type.in_(
-                ["metropolitan_city", "sub_metropolitan_city", "municipality", "rural_municipality"]
-            )
-        ).count(),
-    }
-    return payload
+def coverage(response: Response, db: Session = Depends(get_db)):
+    def build() -> dict:
+        payload = coverage_stats(db)
+        source_rows = db.query(Source)
+        payload["sources"] = {
+            "registered": source_rows.count(),
+            "active": source_rows.filter(Source.active.is_(True)).count(),
+            "failing": source_rows.filter(Source.consecutive_failures > 0).count(),
+            "requires_authorization": source_rows.filter(Source.requires_authorization.is_(True)).count(),
+            "never_scanned": source_rows.filter(Source.last_checked_at.is_(None)).count(),
+            "local_governments": source_rows.filter(
+                Source.source_type.in_(
+                    ["metropolitan_city", "sub_metropolitan_city", "municipality", "rural_municipality"]
+                )
+            ).count(),
+        }
+        return payload
+
+    response.headers.update(CACHE_HEADER)
+    return cache.get_or_set("coverage", None, build, ttl=120)
 
 
 @router.get("/sources")
@@ -502,24 +684,43 @@ def recent_changes(
 
 
 @router.get("/filters/options")
-def filter_options(db: Session = Depends(get_db)):
+def filter_options(response: Response, db: Session = Depends(get_db)):
     """One call that returns every filter menu used by clients."""
-    return {
-        "categories": value_counts(db, Tender.category),
-        "provinces": value_counts(db, Tender.province),
-        "districts": value_counts(db, Tender.district),
-        "municipalities": value_counts(db, Tender.municipality, limit=60),
-        "organizations": value_counts(db, Tender.organization_name, limit=60),
-        "statuses": [
-            {"value": value, "count": count}
-            for value, count in db.query(Tender.status, func.count(Tender.id))
-            .group_by(Tender.status)
+    def build() -> dict:
+        document_totals = dict(
+            db.query(TenderDocument.download_status, func.count(TenderDocument.id))
+            .group_by(TenderDocument.download_status)
             .all()
-        ],
-        "verification_statuses": [
-            {"value": value, "count": count}
-            for value, count in db.query(Tender.verification_status, func.count(Tender.id))
-            .group_by(Tender.verification_status)
-            .all()
-        ],
-    }
+        )
+        return {
+            "categories": value_counts(db, Tender.category),
+            "procurement_types": value_counts(db, Tender.procurement_type),
+            "provinces": value_counts(db, Tender.province),
+            "districts": value_counts(db, Tender.district),
+            "municipalities": value_counts(db, Tender.municipality, limit=60),
+            "organizations": value_counts(db, Tender.organization_name, limit=60),
+            "ministries": value_counts(db, Tender.ministry, limit=60),
+            "departments": value_counts(db, Tender.department, limit=60),
+            "sources": value_counts(db, Tender.source_name, limit=60),
+            "statuses": [
+                {"value": value, "count": count}
+                for value, count in db.query(Tender.status, func.count(Tender.id))
+                .group_by(Tender.status)
+                .all()
+            ],
+            "verification_statuses": [
+                {"value": value, "count": count}
+                for value, count in db.query(Tender.verification_status, func.count(Tender.id))
+                .group_by(Tender.verification_status)
+                .all()
+            ],
+            "document_statuses": [
+                {"value": value or "unverified", "count": count}
+                for value, count in document_totals.items()
+            ],
+            "canonical_procurement_types": list(PROCUREMENT_TYPES),
+            "sort_options": ["newest", "closing", "oldest", "organization"],
+        }
+
+    response.headers.update(CACHE_HEADER)
+    return cache.get_or_set("filter-options", None, build, ttl=90)

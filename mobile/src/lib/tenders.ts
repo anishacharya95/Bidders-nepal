@@ -81,6 +81,18 @@ export function sortTenders(items: Tender[], sort: SortKey): Tender[] {
     });
     return copy;
   }
+  if (sort === 'organization') {
+    copy.sort((a, b) => {
+      const byOrg = a.organization_name.localeCompare(b.organization_name, undefined, {
+        sensitivity: 'base',
+      });
+      if (byOrg !== 0) return byOrg;
+      const aDate = timestamp(a.published_date) || timestamp(a.created_at);
+      const bDate = timestamp(b.published_date) || timestamp(b.created_at);
+      return bDate - aDate;
+    });
+    return copy;
+  }
   // Closing soon: earliest deadline first, notices without a deadline last.
   copy.sort((a, b) => {
     const aTime = timestamp(a.deadline);
@@ -117,6 +129,11 @@ export function documentsFor(tender: Tender): TenderDocument[] {
     ...doc,
     id: doc.id ?? -(index + 1),
     label: doc.label?.trim() || fileNameFromUrl(doc.url),
+    previewable:
+      doc.previewable ??
+      ['PDF', 'JPG', 'JPEG', 'PNG', 'TXT', 'CSV'].includes(
+        (fileExtension(doc.url) ?? '').toUpperCase(),
+      ),
   }));
 }
 
@@ -147,6 +164,8 @@ function buildFacet(values: (string | null | undefined)[]): Facet[] {
 export function deriveFacets(items: Tender[]) {
   return {
     categories: buildFacet(items.map((item) => item.category)),
+    procurementTypes: buildFacet(items.map((item) => item.procurement_type)),
+    ministries: buildFacet(items.map((item) => item.ministry)),
     provinces: buildFacet(items.map((item) => item.province)),
     districts: buildFacet(items.map((item) => item.district)),
     municipalities: buildFacet(items.map((item) => item.municipality)),

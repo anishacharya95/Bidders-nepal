@@ -212,6 +212,11 @@ Collector: `ENABLE_TENDER_COLLECTOR`, `TENDER_PRIORITY_INTERVAL_MINUTES` (or leg
 `TENDER_LOCAL_DISCOVERY`, `TENDER_SOURCE_URLS`, `TENDER_JSON_SOURCE_URLS`,
 `TENDER_JSON_SOURCE_HOSTS`, `TENDER_USER_AGENT`.
 
+Documents: `TENDER_DOCUMENT_REFRESH` (default on), `TENDER_DOCUMENT_REFRESH_HOURS`,
+`TENDER_DOCUMENT_REFRESH_BATCH`, `TENDER_DOCUMENT_MAX_STREAM_BYTES`,
+`TENDER_DOCUMENT_CONNECT_TIMEOUT`, `TENDER_DOCUMENT_READ_TIMEOUT`,
+`TENDER_SEARCH_CACHE_SECONDS`.
+
 ### JSON notice feeds
 
 A feed that publishes notices as JSON is collected with the `json_api` collector. Its
@@ -248,6 +253,57 @@ PY
 
 Pointing this platform's own `/api/v1/tenders/all` back at itself is circular — every
 notice returns as a duplicate — so use a feed published by a different service.
+
+## Advanced search
+
+`GET /api/v1/search` and the existing `GET /api/v1/tenders/all` accept the same filters, so
+clients can combine them freely (all are ANDed):
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` / `title` | Title, notice number, organisation, description, place, ministry |
+| `notice_number` | Tender ID / notice number (also matches the source record id) |
+| `organization`, `ministry`, `department` | Procuring entity and its derived parent |
+| `category` | Works / Goods / Consultancy / Services / Other |
+| `procurement_type` | Goods / Works / Consulting Services / Non-consulting Services |
+| `province`, `district`, `municipality` | Location |
+| `source` | Source website name or host |
+| `status` | `open`/`active`, `closed`, `expired`, `cancelled`, `awarded` |
+| `verification_status` | `pending`, `verified`, `rejected` |
+| `has_documents` | `true` or `false` |
+| `published_from`/`to`, `deadline_from`/`to`, `expiring_days` | Dates |
+| `sort` | `newest`, `closing`, `oldest`, `organization`, `published`, `updated` |
+| `page`, `page_size` | Pagination (max 500 on `/tenders/all`, 100 on `/search`) |
+
+Responses include `items`, `total`, `page`, `pages`, `applied_filters` and `sort`;
+`facets=true` adds category/procurement-type/province/district counts for the same filters.
+`ministry` and `procurement_type` are derived from data the source publishes (the procuring
+entity name and the published category) and stay empty when the source does not support a
+value — they are never guessed. `GET /api/v1/filters/options` returns every filter menu,
+including document status counts.
+
+## Tender documents and the in-app viewer
+
+Every tender keeps all of its public attachments (`tender_documents`), with title, type,
+format, size, publication date, source URL, discovery time, HTTP status and availability.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/v1/tenders/{id}/documents` | All documents for one tender |
+| `GET /api/v1/documents` | Newest discovered documents across tenders |
+| `GET /api/v1/documents/{id}` | One document with preview/download/viewer URLs |
+| `GET /api/v1/documents/{id}/status` | Stored availability (`?refresh=true` re-probes) |
+| `POST /api/v1/documents/{id}/check` | Re-check the source and store the result |
+| `GET /api/v1/documents/{id}/preview` | Stream the file (inline, supports `Range`) |
+| `GET /api/v1/documents/{id}/download` | Stream the file as an attachment |
+| `GET /api/v1/documents/{id}/viewer` | Self-hosted PDF.js reader used by the app |
+
+Streaming is HTTPS-only, restricted to approved public source hosts (plus registered JSON
+feed hosts), rejects private/loopback addresses and non-standard ports, re-validates every
+redirect, caps the response size and never buffers a whole file in memory. A source that has
+moved or removed a file is reported as `missing`/`restricted` so the app can show an honest
+message instead of a blank viewer. The publisher's original link is always preserved; files
+are not mirrored to this service.
 
 ## Deployment
 

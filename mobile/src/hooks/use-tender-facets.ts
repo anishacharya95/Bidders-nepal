@@ -7,6 +7,8 @@ import { EMPTY_FILTERS } from '@/types/tender';
 
 interface Facets {
   categories: Facet[];
+  procurementTypes: Facet[];
+  ministries: Facet[];
   provinces: Facet[];
   districts: Facet[];
   municipalities: Facet[];
@@ -17,6 +19,8 @@ interface Facets {
 
 const emptyFacets: Facets = {
   categories: [],
+  procurementTypes: [],
+  ministries: [],
   provinces: [],
   districts: [],
   municipalities: [],
@@ -38,6 +42,8 @@ export function useTenderFacets() {
         const derived = deriveFacets(page.items);
         setFacets({
           categories: derived.categories,
+          procurementTypes: derived.procurementTypes,
+          ministries: derived.ministries,
           provinces: derived.provinces,
           districts: derived.districts,
           municipalities: derived.municipalities,

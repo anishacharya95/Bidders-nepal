@@ -1,6 +1,7 @@
 """Bid document discovery, classification and reachability metadata."""
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -116,9 +117,20 @@ def documents_from_soup(
     return list(found.values())
 
 
+def document_url_fingerprint(url: str) -> str:
+    """Stable fingerprint used to de-duplicate document rows for one tender.
+
+    When a document is mirrored the file's own SHA-256 is stored in the same
+    column; for link-only documents this URL fingerprint prevents the collector
+    from inserting the same attachment twice.
+    """
+    digest = hashlib.sha256(canonical_url(url).encode("utf-8")).hexdigest()
+    return digest
+
+
 def probe_document(fetcher, url: str) -> DocumentProbe:
     """HEAD (or a tiny ranged GET) to record reachability without downloading files."""
-    if not allowed_host(url):
+    if not fetcher.permitted(url):
         return DocumentProbe(status="link_only")
     try:
         result = fetcher.head(url)

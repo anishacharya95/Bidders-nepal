@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import { memo } from 'react';
 import { Platform, Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
 
@@ -50,6 +51,7 @@ export const TenderCard = memo(function TenderCard({
 }: TenderCardProps) {
   const { colors, isDark, shadow } = useAppTheme();
   const { isSaved, toggleSaved } = useSavedTenders();
+  const router = useRouter();
 
   const saved = isSaved(tender.id);
   const documents = documentsFor(tender);
@@ -169,6 +171,43 @@ export const TenderCard = memo(function TenderCard({
         ) : null}
       </View>
 
+      <Pressable
+        onPress={(event) => {
+          event.stopPropagation?.();
+          router.push({
+            pathname: '/tender/[id]',
+            params: { id: String(tender.id), tab: 'documents' },
+          });
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`View ${documents.length} documents for ${tender.title}`}
+        style={({ pressed }) => [
+          styles.documentsButton,
+          {
+            backgroundColor: documents.length > 0 ? colors.navySoft : colors.surfaceMuted,
+            borderColor: colors.border,
+            opacity: pressed ? 0.7 : 1,
+          },
+        ]}>
+        <Ionicons
+          name={documents.length > 0 ? 'document-attach' : 'document-outline'}
+          size={15}
+          color={documents.length > 0 ? colors.navy : colors.textTertiary}
+        />
+        <AppText
+          variant="caption"
+          style={{
+            color: documents.length > 0 ? colors.navy : colors.textSecondary,
+            fontFamily: 'PlusJakartaSans_600SemiBold',
+            fontSize: 12,
+          }}>
+          {documents.length > 0
+            ? `View documents · ${documents.length}`
+            : 'View documents'}
+        </AppText>
+        <Ionicons name="chevron-forward" size={13} color={colors.textTertiary} />
+      </Pressable>
+
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
       <View style={styles.footer}>
@@ -278,6 +317,15 @@ const styles = StyleSheet.create({
   divider: {
     height: StyleSheet.hairlineWidth,
     marginVertical: 2,
+  },
+  documentsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    height: 36,
+    borderRadius: radii.sm,
+    borderWidth: 1,
   },
   footer: {
     flexDirection: 'row',

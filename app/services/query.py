@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Query, Session
@@ -10,14 +10,23 @@ from sqlalchemy.orm import Query, Session
 from app.models import Tender, TenderDocument
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 @dataclass
 class TenderQueryParams:
     q: str | None = None
     category: str | None = None
+    procurement_type: str | None = None
     province: str | None = None
     district: str | None = None
     municipality: str | None = None
     organization: str | None = None
+    ministry: str | None = None
+    department: str | None = None
+    notice_number: str | None = None
+    source: str | None = None
     status: str | None = None
     verification_status: str | None = None
     has_documents: bool | None = None
@@ -25,8 +34,14 @@ class TenderQueryParams:
     published_to: datetime | None = None
     deadline_from: datetime | None = None
     deadline_to: datetime | None = None
+    expiring_days: int | None = None
     include_rejected: bool = False
     ids: list[int] | None = None
+
+
+def _deadline_utc():
+    """Normalise a possibly-naive deadline column for comparison with UTC now."""
+    return Tender.deadline
 
 
 def apply_filters(query: Query, params: TenderQueryParams) -> Query:
@@ -49,10 +64,16 @@ def apply_filters(query: Query, params: TenderQueryParams) -> Query:
                 Tender.district.ilike(term),
                 Tender.province.ilike(term),
                 Tender.source_name.ilike(term),
+                Tender.ministry.ilike(term),
+                Tender.department.ilike(term),
+                Tender.procurement_type.ilike(term),
+                Tender.category.ilike(term),
             )
         )
     if params.category:
         query = query.filter(Tender.category == params.category)
+    if params.procurement_type:
+        query = query.filter(Tender.procurement_type == params.procurement_type)
     if params.province:
         query = query.filter(Tender.province.ilike(params.province))
     if params.district:
@@ -61,8 +82,36 @@ def apply_filters(query: Query, params: TenderQueryParams) -> Query:
         query = query.filter(Tender.municipality.ilike(params.municipality))
     if params.organization:
         query = query.filter(Tender.organization_name.ilike(f"%{params.organization}%"))
+    if params.ministry:
+        query = query.filter(Tender.ministry.ilike(f"%{params.ministry}%"))
+    if params.department:
+        query = query.filter(Tender.department.ilike(f"%{params.department}%"))
+    if params.notice_number:
+        term = f"%{params.notice_number.strip()}%"
+        query = query.filter(
+            or_(Tender.notice_number.ilike(term), Tender.raw_source_id.ilike(term))
+        )
+    if params.source:
+        term = f"%{params.source.strip()}%"
+        query = query.filter(
+            or_(Tender.source_name.ilike(term), Tender.source_url.ilike(term))
+        )
+
     if params.status:
-        query = query.filter(Tender.status == params.status)
+        status = params.status.strip().lower()
+        now = _now()
+        if status in {"active", "open"}:
+            # "Open" must still be within its deadline: a notice whose deadline
+            # has passed is expired even if the last scan marked it open.
+            query = query.filter(Tender.status == "open")
+            query = query.filter(or_(Tender.deadline.is_(None), Tender.deadline >= now))
+        elif status in {"expired", "past"}:
+            query = query.filter(Tender.deadline.isnot(None))
+            query = query.filter(Tender.deadline < now)
+            query = query.filter(Tender.status.notin_(["cancelled", "awarded"]))
+        else:
+            query = query.filter(Tender.status == status)
+
     if params.has_documents is True:
         query = query.filter(
             or_(
@@ -81,6 +130,11 @@ def apply_filters(query: Query, params: TenderQueryParams) -> Query:
         query = query.filter(Tender.deadline >= params.deadline_from)
     if params.deadline_to:
         query = query.filter(Tender.deadline <= params.deadline_to)
+    if params.expiring_days:
+        now = _now()
+        query = query.filter(Tender.deadline.isnot(None))
+        query = query.filter(Tender.deadline >= now)
+        query = query.filter(Tender.deadline <= now + timedelta(days=params.expiring_days))
     return query
 
 
@@ -95,6 +149,16 @@ def apply_sort(query: Query, sort: str | None) -> Query:
         return query.order_by(Tender.updated_at.desc(), Tender.id.desc())
     if sort == "deadline":
         return query.order_by(Tender.deadline.asc().nulls_last(), Tender.created_at.desc())
+    if sort == "organization":
+        return query.order_by(
+            Tender.organization_name.asc().nulls_last(),
+            func.coalesce(Tender.published_date, Tender.created_at).desc(),
+            Tender.id.desc(),
+        )
+    if sort == "published":
+        return query.order_by(
+            Tender.published_date.desc().nulls_last(), Tender.id.desc()
+        )
     return query.order_by(
         func.coalesce(Tender.published_date, Tender.created_at).desc(), Tender.id.desc()
     )

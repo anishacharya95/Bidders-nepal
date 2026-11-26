@@ -13,16 +13,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '@/components/ui/app-text';
 import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
-import { countActiveFilters, type TenderFilters } from '@/types/tender';
+import { countActiveFilters, EMPTY_FILTERS, type TenderFilters } from '@/types/tender';
 import type { Facet } from '@/lib/tenders';
 import { useAppTheme } from '@/providers/theme-provider';
 import { fonts, maxContentWidth, radii, spacing } from '@/theme';
 
 const STATUS_OPTIONS = [
-  { value: 'open', label: 'Open' },
+  { value: 'active', label: 'Open now' },
   { value: 'closed', label: 'Closed' },
+  { value: 'expired', label: 'Expired' },
   { value: 'cancelled', label: 'Cancelled' },
   { value: 'awarded', label: 'Awarded' },
+];
+
+const PROCUREMENT_TYPES = [
+  'Goods',
+  'Works',
+  'Consulting Services',
+  'Non-consulting Services',
 ];
 
 const VERIFICATION_OPTIONS = [
@@ -36,10 +44,13 @@ interface FilterSheetProps {
   visible: boolean;
   filters: TenderFilters;
   categories: Facet[];
+  procurementTypes?: Facet[];
+  ministries?: Facet[];
   provinces: Facet[];
   districts: Facet[];
   municipalities: Facet[];
   organizations: Facet[];
+  sources?: Facet[];
   onClose: () => void;
   onApply: (filters: TenderFilters) => void;
 }
@@ -48,10 +59,13 @@ export function FilterSheet({
   visible,
   filters,
   categories,
+  procurementTypes = [],
+  ministries = [],
   provinces,
   districts,
   municipalities,
   organizations,
+  sources = [],
   onClose,
   onApply,
 }: FilterSheetProps) {
@@ -61,6 +75,7 @@ export function FilterSheet({
   const [districtQuery, setDistrictQuery] = useState('');
   const [municipalityQuery, setMunicipalityQuery] = useState('');
   const [organizationQuery, setOrganizationQuery] = useState('');
+  const [sourceQuery, setSourceQuery] = useState('');
 
   useEffect(() => {
     if (visible) {
@@ -102,9 +117,26 @@ export function FilterSheet({
     return list.slice(0, 25);
   }, [organizationQuery, organizations]);
 
+  const visibleSources = useMemo(() => {
+    const query = sourceQuery.trim().toLowerCase();
+    const list = query
+      ? sources.filter((item) => item.value.toLowerCase().includes(query))
+      : sources;
+    return list.slice(0, 25);
+  }, [sourceQuery, sources]);
+
+  const procurementOptions = useMemo(() => {
+    if (procurementTypes.length === 0) {
+      return PROCUREMENT_TYPES.map((value) => ({ value, count: 0 }));
+    }
+    return procurementTypes;
+  }, [procurementTypes]);
+
   const toggle = (key: keyof TenderFilters, value: string | null) => {
     setDraft((current) => ({ ...current, [key]: current[key] === value ? null : value }));
   };
+
+  const resetAll = () => setDraft({ ...EMPTY_FILTERS, q: draft.q });
 
   const activeCount = countActiveFilters(draft);
 
@@ -137,7 +169,7 @@ export function FilterSheet({
               variant="ghost"
               size="sm"
               icon="refresh"
-              onPress={() => setDraft({ ...draft, category: null, province: null, district: null, municipality: null, organization: null, status: null, verificationStatus: null, hasDocuments: null })}
+              onPress={resetAll}
             />
           </View>
 
@@ -176,15 +208,38 @@ export function FilterSheet({
             <FilterGroup title="Bid documents">
               <Chip
                 label="All notices"
-                selected={!draft.hasDocuments}
+                selected={draft.hasDocuments === null}
                 onPress={() => setDraft((current) => ({ ...current, hasDocuments: null }))}
               />
               <Chip
                 label="With documents"
                 icon="document-text-outline"
-                selected={!!draft.hasDocuments}
+                selected={draft.hasDocuments === true}
                 onPress={() => setDraft((current) => ({ ...current, hasDocuments: true }))}
               />
+              <Chip
+                label="No documents"
+                icon="document-outline"
+                selected={draft.hasDocuments === false}
+                onPress={() => setDraft((current) => ({ ...current, hasDocuments: false }))}
+              />
+            </FilterGroup>
+
+            <FilterGroup title="Procurement type">
+              <Chip
+                label="All"
+                selected={!draft.procurementType}
+                onPress={() => toggle('procurementType', null)}
+              />
+              {procurementOptions.map((option) => (
+                <Chip
+                  key={option.value}
+                  label={option.value}
+                  count={option.count || undefined}
+                  selected={draft.procurementType === option.value}
+                  onPress={() => toggle('procurementType', option.value)}
+                />
+              ))}
             </FilterGroup>
 
             <FilterGroup title="Category">
@@ -196,6 +251,29 @@ export function FilterSheet({
                   count={option.count || undefined}
                   selected={draft.category === option.value}
                   onPress={() => toggle('category', option.value)}
+                />
+              ))}
+            </FilterGroup>
+
+            <FilterGroup
+              title="Ministry"
+              hint={
+                ministries.length === 0
+                  ? 'Ministries appear when a notice names one as the procuring entity.'
+                  : undefined
+              }>
+              <Chip
+                label="All"
+                selected={!draft.ministry}
+                onPress={() => toggle('ministry', null)}
+              />
+              {ministries.slice(0, 20).map((option) => (
+                <Chip
+                  key={option.value}
+                  label={option.value}
+                  count={option.count}
+                  selected={draft.ministry === option.value}
+                  onPress={() => toggle('ministry', option.value)}
                 />
               ))}
             </FilterGroup>
@@ -301,6 +379,32 @@ export function FilterSheet({
               ))}
             </FilterGroup>
 
+            <FilterGroup
+              title="Source website"
+              hint={
+                sources.length === 0
+                  ? 'No sources reported in the current feed.'
+                  : undefined
+              }>
+              <Chip label="All" selected={!draft.source} onPress={() => toggle('source', null)} />
+              {sources.length > 8 ? (
+                <SearchInput
+                  value={sourceQuery}
+                  onChangeText={setSourceQuery}
+                  placeholder="Find a source website"
+                />
+              ) : null}
+              {visibleSources.map((option) => (
+                <Chip
+                  key={option.value}
+                  label={option.value}
+                  count={option.count}
+                  selected={draft.source === option.value}
+                  onPress={() => toggle('source', option.value)}
+                />
+              ))}
+            </FilterGroup>
+
             <AppText variant="caption" color="textTertiary" style={styles.note}>
               Filter options are built from notices currently returned by the Bidders Nepal API.
             </AppText>
@@ -310,18 +414,7 @@ export function FilterSheet({
             <Button
               label="Clear all"
               variant="secondary"
-              onPress={() =>
-                setDraft({
-                  ...draft,
-                  category: null,
-                                    province: null,
-                  district: null,
-                  municipality: null,
-                  organization: null,
-                  status: null,
-                  verificationStatus: null,
-                  hasDocuments: null,
-                })}
+              onPress={resetAll}
               style={styles.footerButton}
             />
             <Button

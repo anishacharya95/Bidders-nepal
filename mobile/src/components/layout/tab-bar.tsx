@@ -25,6 +25,7 @@ const TABS: Record<
   index: { label: 'Home', icon: 'home-outline', activeIcon: 'home' },
   explore: { label: 'Explore', icon: 'compass-outline', activeIcon: 'compass' },
   saved: { label: 'Saved', icon: 'bookmark-outline', activeIcon: 'bookmark' },
+  documents: { label: 'Docs', icon: 'document-text-outline', activeIcon: 'document-text' },
   notifications: { label: 'Alerts', icon: 'notifications-outline', activeIcon: 'notifications' },
   profile: { label: 'Profile', icon: 'person-outline', activeIcon: 'person' },
 };
@@ -161,8 +162,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   label: {
-    fontSize: 10.5,
-    lineHeight: 14,
+    fontSize: 9.5,
+    lineHeight: 13,
   },
   labelActive: {
     fontFamily: 'PlusJakartaSans_600SemiBold',

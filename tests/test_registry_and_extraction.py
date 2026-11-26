@@ -52,7 +52,9 @@ def test_registry_contains_national_sources_and_authorization_records():
     assert "bolpatra-egp" in slugs
     assert "bolpatranepal-com" in slugs
     authorized = [spec for spec in specs if spec.requires_authorization]
-    assert {spec.slug for spec in authorized} == {"bolpatra-egp", "bolpatranepal-com"}
+    # The official e-GP portal now has a public listing parser, so it is no longer
+    # an authorisation-gated source; the third-party portal still is.
+    assert {spec.slug for spec in authorized} == {"bolpatranepal-com"}
     assert all(not spec.active for spec in authorized)
     assert len(specs) == 753 + 19
 

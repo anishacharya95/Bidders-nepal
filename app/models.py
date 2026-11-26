@@ -42,6 +42,8 @@ class Tender(Base):
     __table_args__ = (
         Index("ix_tenders_deadline_status", "deadline", "status"),
         Index("ix_tenders_category_deadline", "category", "deadline"),
+        Index("ix_tenders_status_deadline", "status", "deadline"),
+        Index("ix_tenders_source_name", "source_name"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -64,6 +66,11 @@ class Tender(Base):
     eligibility: Mapped[str | None] = mapped_column(Text, nullable=True)
     contact_info: Mapped[str | None] = mapped_column(Text, nullable=True)
     notice_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Facets derived from the published category and procuring-entity name. They
+    # are never invented: a value is stored only when the source text supports it.
+    procurement_type: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    ministry: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(300), nullable=True, index=True)
     source_name: Mapped[str] = mapped_column(String(200), default="Manual submission")
     source_url: Mapped[str | None] = mapped_column(String(1500), nullable=True)
     document_url: Mapped[str | None] = mapped_column(String(1500), nullable=True)
@@ -109,6 +116,13 @@ class TenderDocument(Base):
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Optional local mirror reference; the original URL is always preserved.
+    storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    checked_count: Mapped[int] = mapped_column(Integer, default=0)
 
     tender: Mapped["Tender"] = relationship(back_populates="documents")
 

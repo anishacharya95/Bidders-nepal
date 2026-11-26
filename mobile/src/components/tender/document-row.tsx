@@ -1,13 +1,33 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/app-text';
-import { openDocument, downloadDocument, shareDocument } from '@/lib/documents';
-import { documentTypeLabel, fileNameFromUrl } from '@/lib/format';
+import { Badge } from '@/components/ui/badge';
+import { downloadDocument, downloadDocumentById, shareDocument } from '@/lib/documents';
+import { documentTypeLabel, fileNameFromUrl, formatDate } from '@/lib/format';
 import { useAppTheme } from '@/providers/theme-provider';
 import { radii, spacing } from '@/theme';
 import type { TenderDocument } from '@/types/tender';
+
+const PREVIEWABLE = new Set(['PDF', 'JPG', 'JPEG', 'PNG', 'TXT', 'CSV']);
+
+function availabilityTone(doc: TenderDocument) {
+  if (doc.is_available === true) return 'success' as const;
+  if (doc.availability === 'restricted') return 'warning' as const;
+  if (doc.is_available === false) return 'danger' as const;
+  return 'neutral' as const;
+}
+
+function availabilityLabel(doc: TenderDocument): string {
+  if (doc.is_available === true) return 'Available';
+  if (doc.availability === 'restricted') return 'Restricted';
+  if (doc.availability === 'missing') return 'Removed';
+  if (doc.is_available === false) return 'Unreachable';
+  if (doc.download_status === 'available') return 'Available';
+  return 'Not checked';
+}
 
 export function DocumentRow({
   document: doc,
@@ -17,17 +37,22 @@ export function DocumentRow({
   tenderTitle: string;
 }) {
   const { colors } = useAppTheme();
+  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<'open' | 'download' | null>(null);
+
   const type = documentTypeLabel(doc.document_type, doc.url);
   const fileName = fileNameFromUrl(doc.url);
+  const format = (doc.file_format || '').toUpperCase();
+  const previewable = doc.previewable ?? PREVIEWABLE.has(format);
   const size =
     typeof doc.file_size_bytes === 'number' && doc.file_size_bytes > 0
       ? doc.file_size_bytes >= 1024 * 1024
         ? `${(doc.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`
         : `${Math.max(1, Math.round(doc.file_size_bytes / 1024))} KB`
       : null;
-  const meta = [doc.file_format || null, size, doc.download_status || null]
+  const published = formatDate(doc.published_date ?? doc.discovered_at ?? null);
+  const meta = [format || null, size, published ? `added ${published}` : null]
     .filter(Boolean)
     .join(' · ');
 
@@ -38,8 +63,37 @@ export function DocumentRow({
       if (!result.ok) setMessage(result.message ?? null);
       return;
     }
-    setBusy(action);
-    const result = action === 'open' ? await openDocument(doc.url) : await downloadDocument(doc);
+
+    if (action === 'open') {
+      if (previewable && doc.id > 0) {
+        // In-app reader: PDF.js inside the app, no external browser redirect.
+        router.push({
+          pathname: '/document/[id]',
+          params: {
+            id: String(doc.id),
+            title: doc.label,
+            format: format || 'PDF',
+          },
+        });
+        return;
+      }
+      if (!previewable && doc.id > 0) {
+        setBusy('open');
+        const result = await downloadDocumentById(doc.id, doc.label, doc.file_format);
+        setBusy(null);
+        setMessage(
+          result.message ??
+            'This format cannot be previewed in the app. The file was opened with your device viewer.',
+        );
+        return;
+      }
+    }
+
+    setBusy('download');
+    const result =
+      doc.id > 0 && doc.previewable !== undefined
+        ? await downloadDocumentById(doc.id, doc.label, doc.file_format)
+        : await downloadDocument(doc);
     setBusy(null);
     if (!result.ok || result.message) setMessage(result.message ?? null);
   };
@@ -47,8 +101,8 @@ export function DocumentRow({
   return (
     <View style={[styles.row, { borderColor: colors.border, backgroundColor: colors.surface }]}>
       <View style={styles.top}>
-        <View style={[styles.fileIcon, { backgroundColor: colors.dangerSoft }]}>
-          <Ionicons name="document-text" size={19} color={colors.danger} />
+        <View style={[styles.fileIcon, { backgroundColor: colors.navySoft }]}>
+          <Ionicons name="document-text" size={19} color={colors.navy} />
         </View>
         <View style={styles.copy}>
           <AppText variant="smallStrong" numberOfLines={2}>
@@ -62,6 +116,10 @@ export function DocumentRow({
               {meta}
             </AppText>
           ) : null}
+          <View style={styles.badgeRow}>
+            <Badge label={availabilityLabel(doc)} tone={availabilityTone(doc)} dot />
+            {previewable ? <Badge label="In-app preview" tone="info" icon="eye-outline" /> : null}
+          </View>
           {message ? (
             <AppText variant="caption" color="textSecondary" style={styles.message}>
               {message}
@@ -71,8 +129,8 @@ export function DocumentRow({
       </View>
       <View style={styles.actions}>
         <ActionButton
-          label={busy === 'open' ? 'Opening…' : 'Open'}
-          icon="open-outline"
+          label={busy === 'open' ? 'Opening…' : previewable ? 'View' : 'Open'}
+          icon={previewable ? 'eye-outline' : 'open-outline'}
           onPress={() => run('open')}
           primary
         />
@@ -141,7 +199,13 @@ const styles = StyleSheet.create({
   },
   copy: {
     flex: 1,
-    gap: 2,
+    gap: 3,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 2,
   },
   message: {
     marginTop: 4,

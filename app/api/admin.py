@@ -34,6 +34,7 @@ from app.security import get_current_admin
 from app.services.monitoring import platform_stats
 from app.services.duplicates import search_duplicate_groups
 from app.services.monitoring import coverage_stats
+from app.services.classification import apply_classification
 
 router = APIRouter(
     prefix="/api/v1/admin",
@@ -99,6 +100,7 @@ def create_tender(
     tender = Tender(
         **payload.model_dump(), created_by=admin.id, verification_status="pending", status="open"
     )
+    apply_classification(tender)
     db.add(tender)
     db.flush()
     _audit(db, admin, "create", tender.id)
@@ -119,6 +121,7 @@ def update_tender(
         raise HTTPException(status_code=404, detail="Tender not found")
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(tender, key, value)
+    apply_classification(tender)
     _audit(db, admin, "update", tender.id)
     db.commit()
     db.refresh(tender)

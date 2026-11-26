@@ -37,6 +37,7 @@ const SORT_OPTIONS: { key: SortKey; label: string; icon: keyof typeof Ionicons.g
   { key: 'newest', label: 'Newest', icon: 'sparkles-outline' },
   { key: 'closing', label: 'Closing soon', icon: 'alarm-outline' },
   { key: 'oldest', label: 'Oldest', icon: 'time-outline' },
+  { key: 'organization', label: 'A–Z', icon: 'business-outline' },
 ];
 
 export default function ExploreScreen() {
@@ -116,6 +117,12 @@ export default function ExploreScreen() {
     if (filterState.hasDocuments) chips.push({ key: 'hasDocuments', label: 'With documents' });
     if (filterState.organization)
       chips.push({ key: 'organization', label: filterState.organization });
+    if (filterState.procurementType)
+      chips.push({ key: 'procurementType', label: filterState.procurementType });
+    if (filterState.ministry) chips.push({ key: 'ministry', label: filterState.ministry });
+    if (filterState.source) chips.push({ key: 'source', label: filterState.source });
+    if (filterState.hasDocuments === false)
+      chips.push({ key: 'hasDocuments', label: 'No documents' });
     if (filterState.status) chips.push({ key: 'status', label: filterState.status });
     if (filterState.verificationStatus)
       chips.push({ key: 'verificationStatus', label: filterState.verificationStatus });
@@ -328,10 +335,13 @@ export default function ExploreScreen() {
         visible={sheetOpen}
         filters={filterState}
         categories={facets.categories}
+        procurementTypes={facets.procurementTypes}
+        ministries={facets.ministries}
         provinces={facets.provinces}
         districts={facets.districts}
         municipalities={facets.municipalities}
         organizations={facets.organizations}
+        sources={facets.sources}
         onClose={() => setSheetOpen(false)}
         onApply={(next) => setFilterState({ ...next, q: filterState.q })}
       />

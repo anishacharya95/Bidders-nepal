@@ -28,6 +28,8 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 
 export interface RequestOptions {
   params?: Record<string, QueryValue>;
+  /** Only GET and POST are used; the public API has no other verbs. */
+  method?: 'GET' | 'POST';
   signal?: AbortSignal;
   timeoutMs?: number;
   retries?: number;
@@ -51,7 +53,14 @@ function describeFetchFailure(error: unknown, timedOut: boolean): ApiError {
  * failures, and typed errors. No credentials are ever attached.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { params, signal, timeoutMs = REQUEST_TIMEOUT_MS, retries = 1, allowNotFound } = options;
+  const {
+    params,
+    method = 'GET',
+    signal,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    retries = 1,
+    allowNotFound,
+  } = options;
   const url = buildUrl(path, params);
 
   let attempt = 0;
@@ -70,7 +79,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
     try {
       const response = await fetch(url, {
-        method: 'GET',
+        method,
         headers: { Accept: 'application/json' },
         signal: controller.signal,
       });

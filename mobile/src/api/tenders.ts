@@ -1,11 +1,20 @@
-import { HEALTH_TIMEOUT_MS, MAX_PAGE_SIZE } from '@/config';
+import { API_BASE_URL, HEALTH_TIMEOUT_MS, MAX_PAGE_SIZE } from '@/config';
 import { apiRequest, ApiError, readCache, writeCache } from '@/api/client';
-import type { Tender, TenderFilters, TenderPage, VerificationStatus } from '@/types/tender';
+import {
+  EMPTY_FILTERS,
+  type SortKey,
+  type Tender,
+  type TenderDocument,
+  type TenderFilters,
+  type TenderPage,
+  type VerificationStatus,
+} from '@/types/tender';
 
 interface FeedRequest {
   filters: TenderFilters;
   page: number;
   pageSize?: number;
+  sort?: SortKey;
   force?: boolean;
   includeRejected?: boolean;
 }
@@ -14,12 +23,16 @@ function filterParams(filters: TenderFilters) {
   return {
     q: filters.q.trim() || undefined,
     category: filters.category || undefined,
+    procurement_type: filters.procurementType || undefined,
     province: filters.province || undefined,
     district: filters.district || undefined,
     municipality: filters.municipality || undefined,
+    organization: filters.organization || undefined,
+    ministry: filters.ministry || undefined,
+    source: filters.source || undefined,
     status: filters.status || undefined,
     verification_status: filters.verificationStatus || undefined,
-    has_documents: filters.hasDocuments ? true : undefined,
+    has_documents: filters.hasDocuments === true ? true : filters.hasDocuments === false ? false : undefined,
   };
 }
 
@@ -45,12 +58,14 @@ export async function fetchAllTenders({
   filters,
   page,
   pageSize = MAX_PAGE_SIZE,
+  sort,
   force,
   includeRejected,
   signal,
 }: FeedRequest & { signal?: AbortSignal }): Promise<TenderPage> {
   const params = {
     ...filterParams(filters),
+    sort: sort && sort !== 'newest' ? sort : undefined,
     include_rejected: includeRejected ? true : undefined,
     page,
     page_size: Math.min(pageSize, MAX_PAGE_SIZE),
@@ -71,11 +86,13 @@ export async function fetchVerifiedTenders({
   filters,
   page,
   pageSize = 100,
+  sort,
   force,
   signal,
 }: FeedRequest & { signal?: AbortSignal }): Promise<TenderPage> {
   const params = {
     ...filterParams(filters),
+    sort: sort && sort !== 'newest' ? sort : undefined,
     page,
     page_size: Math.min(pageSize, 100),
   };
@@ -112,17 +129,7 @@ export async function fetchTenderFromFeed(
 ): Promise<Tender> {
   for (let page = 1; page <= maxPages; page += 1) {
     const data = await fetchAllTenders({
-      filters: {
-        q: '',
-        category: null,
-        province: null,
-        district: null,
-        municipality: null,
-        organization: null,
-        status: null,
-        verificationStatus: null,
-        hasDocuments: null,
-      },
+      filters: EMPTY_FILTERS,
       page,
       pageSize: MAX_PAGE_SIZE,
       signal,
@@ -214,3 +221,138 @@ export const verificationLabels: Record<VerificationStatus, string> = {
   verified: 'Verified',
   rejected: 'Rejected',
 };
+
+/* ---------------------------------------------------------------- documents */
+
+/**
+ * Absolute API URLs for a document. The app never sends the browser to the
+ * original government host: it streams through the API so PDFs open inside the
+ * app and broken links surface as a clear status instead of a blank page.
+ */
+export function documentViewerUrl(documentId: number): string {
+  return `${API_BASE_URL}/api/v1/documents/${documentId}/viewer`;
+}
+
+export function documentPreviewUrl(documentId: number): string {
+  return `${API_BASE_URL}/api/v1/documents/${documentId}/preview`;
+}
+
+export function documentDownloadUrl(documentId: number): string {
+  return `${API_BASE_URL}/api/v1/documents/${documentId}/download`;
+}
+
+export interface TenderDocumentsResult {
+  items: TenderDocument[];
+  count: number;
+  availableCount: number;
+  sourceUrl: string | null;
+}
+
+/** All documents for one tender, straight from the documents endpoint. */
+export async function fetchTenderDocuments(
+  tenderId: number,
+  signal?: AbortSignal,
+): Promise<TenderDocumentsResult> {
+  const raw = await apiRequest<{
+    items?: TenderDocument[];
+    count?: number;
+    available_count?: number;
+    source_url?: string | null;
+  }>(`/api/v1/tenders/${tenderId}/documents`, { signal });
+  const items = Array.isArray(raw?.items) ? raw.items : [];
+  return {
+    items,
+    count: typeof raw?.count === 'number' ? raw.count : items.length,
+    availableCount: typeof raw?.available_count === 'number' ? raw.available_count : 0,
+    sourceUrl: raw?.source_url ?? null,
+  };
+}
+
+export interface DocumentStatus {
+  id: number;
+  availability: string;
+  isAvailable: boolean | null;
+  httpStatus: number | null;
+  lastCheckedAt: string | null;
+  originalUrl?: string;
+}
+
+function normaliseStatus(raw: any, id: number): DocumentStatus {
+  return {
+    id,
+    availability: raw?.availability ?? 'unverified',
+    isAvailable: typeof raw?.is_available === 'boolean' ? raw.is_available : null,
+    httpStatus: typeof raw?.http_status === 'number' ? raw.http_status : null,
+    lastCheckedAt: raw?.last_checked_at ?? null,
+    originalUrl: raw?.original_url,
+  };
+}
+
+/** Cached availability (no network probe at the source). */
+export async function fetchDocumentStatus(
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<DocumentStatus> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/v1/documents/${documentId}/status`,
+    { signal },
+  );
+  return normaliseStatus(raw, documentId);
+}
+
+/** Ask the API to re-check the source and report the real availability. */
+export async function checkDocumentAvailability(documentId: number): Promise<DocumentStatus> {
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/v1/documents/${documentId}/check`,
+    { method: 'POST' },
+  );
+  return normaliseStatus(raw, documentId);
+}
+
+/** Metadata for a single document (label, format, size, availability). */
+export async function fetchDocumentMeta(
+  documentId: number,
+  signal?: AbortSignal,
+): Promise<TenderDocument | null> {
+  const raw = await apiRequest<Record<string, unknown>>(`/api/v1/documents/${documentId}`, {
+    signal,
+    allowNotFound: true,
+  }).catch(() => null);
+  if (!raw) return null;
+  return raw as unknown as TenderDocument;
+}
+
+export interface TenderChange {
+  id: number;
+  change_type: string;
+  field?: string | null;
+  old_value?: string | null;
+  new_value?: string | null;
+  note?: string | null;
+  source_url?: string | null;
+  detected_at: string;
+}
+
+/** Change history: new documents, deadline extensions, amendments, duplicates. */
+export async function fetchTenderChanges(
+  tenderId: number,
+  signal?: AbortSignal,
+): Promise<TenderChange[]> {
+  const raw = await apiRequest<{ items?: TenderChange[] }>(
+    `/api/v1/tenders/${tenderId}/changes`,
+    { signal, allowNotFound: true },
+  ).catch(() => null);
+  return Array.isArray(raw?.items) ? raw.items : [];
+}
+
+/** Newest discovered documents across all public tenders (Documents tab). */
+export async function fetchRecentDocuments(
+  limit = 40,
+  signal?: AbortSignal,
+): Promise<TenderDocument[]> {
+  const raw = await apiRequest<{ items?: TenderDocument[] }>('/api/v1/documents', {
+    params: { limit },
+    signal,
+  });
+  return Array.isArray(raw?.items) ? raw.items : [];
+}

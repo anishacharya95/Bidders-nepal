@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -22,9 +22,14 @@ import { Screen } from '@/components/ui/screen';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, ErrorState, InlineNotice } from '@/components/ui/states';
 import { errorMessage } from '@/api/client';
-import { fetchAnyTender } from '@/api/tenders';
+import {
+  fetchAnyTender,
+  fetchTenderChanges,
+  fetchTenderDocuments,
+  type TenderChange,
+} from '@/api/tenders';
 import { openDocument, shareTenderLink } from '@/lib/documents';
-import { formatBudget, formatDate, formatDateTime, remainingLabel } from '@/lib/format';
+import { formatBudget, formatDate, formatDateTime, remainingLabel, relativeTime } from '@/lib/format';
 import {
   documentsFor,
   isOpenTender,
@@ -37,7 +42,7 @@ import { getCachedTender, putCachedTender } from '@/lib/tender-cache';
 import { useAppTheme } from '@/providers/theme-provider';
 import { useSavedTenders } from '@/providers/saved-provider';
 import { radii, spacing } from '@/theme';
-import type { Tender } from '@/types/tender';
+import type { Tender, TenderDocument } from '@/types/tender';
 
 const toneColors = {
   success: '#3DD68C',
@@ -46,19 +51,35 @@ const toneColors = {
   neutral: 'rgba(255,255,255,0.7)',
 } as const;
 
+type TabKey = 'overview' | 'documents' | 'updates' | 'source';
+
+const TABS: { key: TabKey; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'overview', label: 'Overview', icon: 'information-circle-outline' },
+  { key: 'documents', label: 'Documents', icon: 'document-attach-outline' },
+  { key: 'updates', label: 'Updates', icon: 'git-compare-outline' },
+  { key: 'source', label: 'Source', icon: 'globe-outline' },
+];
+
 export default function TenderDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab } = useLocalSearchParams<{ id: string; tab?: string }>();
   const tenderId = Number(id);
+  const initialTab: TabKey =
+    tab === 'documents' || tab === 'updates' || tab === 'source' ? tab : 'overview';
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useAppTheme();
   const { isSaved, toggleSaved } = useSavedTenders();
 
   const [tender, setTender] = useState<Tender | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [sourceMessage, setSourceMessage] = useState<string | null>(null);
+  const [apiDocuments, setApiDocuments] = useState<TenderDocument[] | null>(null);
+  const [documentsState, setDocumentsState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [changes, setChanges] = useState<TenderChange[] | null>(null);
 
   useEffect(() => {
     if (!Number.isFinite(tenderId)) {
@@ -94,14 +115,38 @@ export default function TenderDetailScreen() {
     };
   }, [tenderId, reloadKey]);
 
+  // Documents and change history come from their own endpoints so a tender with
+  // many attachments does not depend on the feed payload.
+  useEffect(() => {
+    if (!Number.isFinite(tenderId)) return;
+    let active = true;
+    setDocumentsState('loading');
+    fetchTenderDocuments(tenderId)
+      .then((result) => {
+        if (!active) return;
+        setApiDocuments(result.items);
+        setDocumentsState('ready');
+      })
+      .catch((caught) => {
+        if (!active) return;
+        setDocumentsState('error');
+        setDocumentsError(errorMessage(caught));
+      });
+    fetchTenderChanges(tenderId).then((rows) => {
+      if (active) setChanges(rows);
+    });
+    return () => {
+      active = false;
+    };
+  }, [tenderId, reloadKey]);
+
   const onShare = useCallback(async () => {
     if (!tender) return;
-    const url = tender.source_url;
-    if (!url) {
+    if (!tender.source_url) {
       setSourceMessage('This notice has no public source link to share.');
       return;
     }
-    await shareTenderLink(url, tender.title);
+    await shareTenderLink(tender.source_url, tender.title);
   }, [tender]);
 
   const onSave = useCallback(() => {
@@ -122,7 +167,11 @@ export default function TenderDetailScreen() {
     if (!result.ok) setSourceMessage(result.message ?? 'Could not open the source website.');
   }, [tender]);
 
-  const documents = tender ? documentsFor(tender) : [];
+  const documents = useMemo(() => {
+    if (apiDocuments && apiDocuments.length > 0) return apiDocuments;
+    return tender ? documentsFor(tender) : [];
+  }, [apiDocuments, tender]);
+
   const remaining = tender ? remainingLabel(tender.deadline) : null;
   const saved = tender ? isSaved(tender.id) : false;
 
@@ -154,34 +203,34 @@ export default function TenderDetailScreen() {
   }
 
   return (
-    <Screen>
-      <View style={styles.topBar}>
-        <IconButton
-          icon="arrow-back"
-          variant="surface"
-          onPress={() => router.back()}
-          accessibilityLabel="Go back"
-        />
-        <View style={styles.topActions}>
-          {loading ? <ActivityIndicator size="small" color={colors.navy} /> : null}
-          <IconButton
-            icon="share-social-outline"
-            variant="surface"
-            onPress={onShare}
-            accessibilityLabel="Share tender"
-          />
-          <IconButton
-            icon={saved ? 'bookmark' : 'bookmark-outline'}
-            variant={saved ? 'navy' : 'surface'}
-            onPress={onSave}
-            accessibilityLabel={saved ? 'Remove from saved' : 'Save tender'}
-          />
-        </View>
-      </View>
-
+    <Screen style={styles.screen}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 + insets.bottom }}>
+        <View style={styles.topBar}>
+          <IconButton
+            icon="arrow-back"
+            variant="surface"
+            onPress={() => router.back()}
+            accessibilityLabel="Go back"
+          />
+          <View style={styles.topActions}>
+            {loading ? <ActivityIndicator size="small" color={colors.navy} /> : null}
+            <IconButton
+              icon="share-social-outline"
+              variant="surface"
+              onPress={onShare}
+              accessibilityLabel="Share tender"
+            />
+            <IconButton
+              icon={saved ? 'bookmark' : 'bookmark-outline'}
+              variant={saved ? 'navy' : 'surface'}
+              onPress={onSave}
+              accessibilityLabel={saved ? 'Remove from saved' : 'Save tender'}
+            />
+          </View>
+        </View>
+
         <View style={styles.heroWrap}>
           <LinearGradient
             colors={isDark ? ['#0E2138', '#0A1728'] : ['#0B1F3A', '#173A63']}
@@ -228,6 +277,48 @@ export default function TenderDetailScreen() {
           </LinearGradient>
         </View>
 
+        <View style={styles.tabsWrap}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={[styles.tabs, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              {TABS.map((item) => {
+                const active = activeTab === item.key;
+                const count =
+                  item.key === 'documents'
+                    ? documents.length
+                    : item.key === 'updates'
+                      ? (changes?.length ?? 0)
+                      : 0;
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={() => setActiveTab(item.key)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    style={[styles.tab, active && { backgroundColor: colors.surface }]}>
+                    <Ionicons
+                      name={item.icon}
+                      size={14}
+                      color={active ? colors.navy : colors.textTertiary}
+                    />
+                    <AppText
+                      variant="caption"
+                      style={{
+                        color: active ? colors.navy : colors.textTertiary,
+                        fontFamily: active
+                          ? 'PlusJakartaSans_600SemiBold'
+                          : 'PlusJakartaSans_500Medium',
+                        fontSize: 12,
+                      }}>
+                      {item.label}
+                      {count > 0 ? ` · ${count}` : ''}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
+
         <View style={styles.body}>
           {!isVerified(tender) ? (
             <InlineNotice
@@ -247,137 +338,264 @@ export default function TenderDetailScreen() {
             />
           ) : null}
 
-          <Card style={styles.card} padded={false}>
-            <View style={styles.cardHeader}>
-              <AppText variant="h3">Key details</AppText>
-              <Ionicons name="document-text-outline" size={17} color={colors.textTertiary} />
-            </View>
-            <View style={styles.details}>
-              <DetailRow icon="barcode-outline" label="Notice number" value={tender.notice_number} />
-              <DetailRow icon="pricetags-outline" label="Category" value={tender.category} />
-              <DetailRow icon="map-outline" label="Province" value={tender.province} />
-              <DetailRow icon="location-outline" label="District" value={tender.district} />
-              <DetailRow
-                icon="calendar-outline"
-                label="Published"
-                value={formatDate(tender.published_date)}
-              />
-              <DetailRow
-                icon="alarm-outline"
-                label="Submission deadline"
-                value={formatDateTime(tender.deadline)}
-              />
-              <DetailRow
-                icon="time-outline"
-                label="Remaining time"
-                value={remaining?.label ?? null}
-              />
-              <DetailRow
-                icon="cash-outline"
-                label="Estimated budget"
-                value={formatBudget(tender.estimated_budget_npr)}
-              />
-              <DetailRow
-                icon="shield-outline"
-                label="Verification"
-                value={verificationLabel(tender.verification_status)}
-              />
-              <DetailRow
-                icon="cloud-outline"
-                label="Source"
-                value={tender.source_name}
-                last
-              />
-            </View>
-          </Card>
+          {activeTab === 'overview' ? (
+            <>
+              <Card style={styles.card} padded={false}>
+                <View style={styles.cardHeader}>
+                  <AppText variant="h3">Key details</AppText>
+                  <Ionicons name="document-text-outline" size={17} color={colors.textTertiary} />
+                </View>
+                <View style={styles.details}>
+                  <DetailRow icon="barcode-outline" label="Notice number" value={tender.notice_number} />
+                  <DetailRow icon="pricetags-outline" label="Category" value={tender.category} />
+                  <DetailRow
+                    icon="cube-outline"
+                    label="Procurement type"
+                    value={tender.procurement_type}
+                  />
+                  <DetailRow icon="business-outline" label="Ministry" value={tender.ministry} />
+                  <DetailRow icon="git-branch-outline" label="Department" value={tender.department} />
+                  <DetailRow icon="map-outline" label="Province" value={tender.province} />
+                  <DetailRow icon="location-outline" label="District" value={tender.district} />
+                  <DetailRow icon="home-outline" label="Municipality" value={tender.municipality} />
+                  <DetailRow
+                    icon="calendar-outline"
+                    label="Published"
+                    value={formatDate(tender.published_date)}
+                  />
+                  <DetailRow
+                    icon="alarm-outline"
+                    label="Submission deadline"
+                    value={formatDateTime(tender.deadline)}
+                  />
+                  <DetailRow
+                    icon="time-outline"
+                    label="Remaining time"
+                    value={remaining?.label ?? null}
+                  />
+                  <DetailRow
+                    icon="cash-outline"
+                    label="Estimated budget"
+                    value={formatBudget(tender.estimated_budget_npr)}
+                  />
+                  <DetailRow
+                    icon="shield-outline"
+                    label="Verification"
+                    value={verificationLabel(tender.verification_status)}
+                  />
+                  <DetailRow
+                    icon="cloud-outline"
+                    label="Source"
+                    value={tender.source_name}
+                    last
+                  />
+                </View>
+              </Card>
 
-          <Card style={styles.card}>
-            <AppText variant="h3">Description</AppText>
-            <AppText
-              variant="body"
-              color={tender.description ? 'textSecondary' : 'textTertiary'}
-              style={styles.description}>
-              {tender.description?.trim() ||
-                'No description was published by the source. Open the original notice for full scope, eligibility and submission instructions.'}
-            </AppText>
-          </Card>
-
-          <View>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitle}>
-                <AppText variant="h2">Bid documents</AppText>
-                <AppText variant="caption" color="textTertiary">
-                  {documents.length > 0
-                    ? `${documents.length} public document${documents.length === 1 ? '' : 's'} from the original source`
-                    : 'No public document URL returned by the API'}
-                </AppText>
-              </View>
-              <Badge
-                label={documents.length > 0 ? 'Available' : 'None listed'}
-                tone={documents.length > 0 ? 'info' : 'neutral'}
-              />
-            </View>
-
-            {documents.length === 0 ? (
               <Card style={styles.card}>
-                <EmptyState
-                  icon="document-outline"
-                  title="No bid documents published"
-                  message="The API has no public document URL for this notice. Check the original source for attachments."
-                  actionLabel={tender.source_url ? 'Open original source' : undefined}
-                  onAction={tender.source_url ? onOpenSource : undefined}
+                <AppText variant="h3">Description</AppText>
+                <AppText
+                  variant="body"
+                  color={tender.description ? 'textSecondary' : 'textTertiary'}
+                  style={styles.description}>
+                  {tender.description?.trim() ||
+                    'No description was published by the source. Open the original notice for full scope, eligibility and submission instructions.'}
+                </AppText>
+              </Card>
+
+              <Card style={styles.card}>
+                <View style={styles.documentsSummary}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <AppText variant="h3">Bid documents</AppText>
+                    <AppText variant="caption" color="textTertiary">
+                      {documents.length > 0
+                        ? `${documents.length} public document${documents.length === 1 ? '' : 's'} discovered`
+                        : 'No public document found for this notice yet'}
+                    </AppText>
+                  </View>
+                  <Badge
+                    label={documents.length > 0 ? 'Available' : 'None listed'}
+                    tone={documents.length > 0 ? 'info' : 'neutral'}
+                  />
+                </View>
+                <Button
+                  label={documents.length > 0 ? 'Open documents tab' : 'See documents'}
+                  icon="document-attach-outline"
+                  variant="secondary"
+                  onPress={() => setActiveTab('documents')}
                 />
               </Card>
-            ) : (
-              <View style={styles.documentList}>
-                {documents.map((doc) => (
-                  <DocumentRow key={`${doc.id}-${doc.url}`} document={doc} tenderTitle={tender.title} />
-                ))}
-              </View>
-            )}
-          </View>
+            </>
+          ) : null}
 
-          <Card style={styles.card}>
-            <View style={styles.sourceRow}>
-              <View style={[styles.sourceIcon, { backgroundColor: colors.navySoft }]}>
-                <Ionicons name="globe-outline" size={19} color={colors.navy} />
+          {activeTab === 'documents' ? (
+            <View style={styles.documentsTab}>
+              <View style={styles.sectionHeaderRow}>
+                <View style={styles.sectionTitle}>
+                  <AppText variant="h2">Documents</AppText>
+                  <AppText variant="caption" color="textTertiary">
+                    {documentsState === 'loading'
+                      ? 'Loading documents from the API…'
+                      : documents.length > 0
+                        ? `${documents.length} file${documents.length === 1 ? '' : 's'} · preview inside the app or download`
+                        : 'The API returned no documents for this notice'}
+                  </AppText>
+                </View>
+                <Badge
+                  label={documents.length > 0 ? `${documents.length}` : '0'}
+                  tone={documents.length > 0 ? 'info' : 'neutral'}
+                />
               </View>
-              <View style={styles.sourceCopy}>
-                <AppText variant="smallStrong">Original source website</AppText>
-                <AppText
-                  variant="caption"
-                  color={tender.source_url ? 'textSecondary' : 'textTertiary'}
-                  numberOfLines={1}>
-                  {tender.source_url ?? 'No public source URL was provided for this notice.'}
+
+              {documentsState === 'loading' ? (
+                <Card style={styles.card}>
+                  <Skeleton height={64} />
+                  <Skeleton height={64} />
+                </Card>
+              ) : null}
+
+              {documentsState === 'error' ? (
+                <InlineNotice
+                  tone="warning"
+                  icon="alert-circle-outline"
+                  title="Could not refresh documents"
+                  message={
+                    documentsError ??
+                    'Showing documents from the saved tender record. Pull down or retry to refresh.'
+                  }
+                />
+              ) : null}
+
+              {documents.length === 0 ? (
+                <Card style={styles.card}>
+                  <EmptyState
+                    icon="document-outline"
+                    title="No documents published"
+                    message="No public attachment was found on the source page. Check the original notice for files that may be added later."
+                    actionLabel={tender.source_url ? 'Open original source' : undefined}
+                    onAction={tender.source_url ? onOpenSource : undefined}
+                  />
+                </Card>
+              ) : (
+                <View style={styles.documentList}>
+                  {documents.map((doc) => (
+                    <DocumentRow
+                      key={`${doc.id}-${doc.url}`}
+                      document={doc}
+                      tenderTitle={tender.title}
+                    />
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {activeTab === 'updates' ? (
+            <View style={styles.documentsTab}>
+              <AppText variant="h2">Updates</AppText>
+              <AppText variant="caption" color="textTertiary">
+                Deadlines, amendments and newly discovered documents recorded by the collector.
+              </AppText>
+              {changes === null ? (
+                <Card style={styles.card}>
+                  <Skeleton height={16} />
+                  <Skeleton height={16} width="70%" />
+                </Card>
+              ) : changes.length === 0 ? (
+                <Card style={styles.card}>
+                  <EmptyState
+                    icon="time-outline"
+                    title="No recorded changes"
+                    message="This notice has not changed since it was first collected."
+                  />
+                </Card>
+              ) : (
+                <View style={styles.documentList}>
+                  {changes.map((change) => (
+                    <View
+                      key={change.id}
+                      style={[styles.changeRow, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                      <View style={[styles.changeDot, { backgroundColor: colors.navySoft }]}>
+                        <Ionicons name="git-compare-outline" size={14} color={colors.navy} />
+                      </View>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <AppText variant="smallStrong">
+                          {change.change_type.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())}
+                        </AppText>
+                        <AppText variant="caption" color="textSecondary">
+                          {change.note ??
+                            [change.field, change.old_value, '→', change.new_value]
+                              .filter(Boolean)
+                              .join(' ')}
+                        </AppText>
+                        <AppText variant="caption" color="textTertiary">
+                          {relativeTime(change.detected_at) ?? formatDate(change.detected_at) ?? ''}
+                        </AppText>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {activeTab === 'source' ? (
+            <View style={styles.documentsTab}>
+              <Card style={styles.card}>
+                <View style={styles.sourceRow}>
+                  <View style={[styles.sourceIcon, { backgroundColor: colors.navySoft }]}>
+                    <Ionicons name="globe-outline" size={19} color={colors.navy} />
+                  </View>
+                  <View style={styles.sourceCopy}>
+                    <AppText variant="smallStrong">{tender.source_name}</AppText>
+                    <AppText
+                      variant="caption"
+                      color={tender.source_url ? 'textSecondary' : 'textTertiary'}
+                      numberOfLines={2}>
+                      {tender.source_url ?? 'No public source URL was provided for this notice.'}
+                    </AppText>
+                  </View>
+                </View>
+                <DetailRow icon="cloud-outline" label="Source name" value={tender.source_name} />
+                <DetailRow icon="link-outline" label="Original URL" value={tender.source_url} />
+                <DetailRow
+                  icon="shield-outline"
+                  label="Verification"
+                  value={verificationLabel(tender.verification_status)}
+                  last
+                />
+                <Button
+                  label="Open original notice"
+                  icon="open-outline"
+                  onPress={onOpenSource}
+                  disabled={!tender.source_url}
+                  size="md"
+                />
+                {sourceMessage ? (
+                  <AppText variant="caption" color="textSecondary">
+                    {sourceMessage}
+                  </AppText>
+                ) : null}
+                <AppText variant="caption" color="textTertiary">
+                  Documents are streamed through Bidders Nepal so they open inside the app. The
+                  original link is always kept for verification.
+                </AppText>
+              </Card>
+
+              <View style={styles.metaFooter}>
+                <AppText variant="caption" color="textTertiary">
+                  Record ID {tender.id} · added {formatDate(tender.created_at) ?? 'unknown'}
+                  {tender.updated_at !== tender.created_at
+                    ? ` · updated ${formatDate(tender.updated_at) ?? 'unknown'}`
+                    : ''}
+                </AppText>
+                <AppText variant="caption" color="textTertiary">
+                  Bidders Nepal aggregates public notices. Always verify details with the procuring
+                  entity.
                 </AppText>
               </View>
             </View>
-            <Button
-              label="View original notice"
-              icon="open-outline"
-              onPress={onOpenSource}
-              disabled={!tender.source_url}
-              size="md"
-            />
-            {sourceMessage ? (
-              <AppText variant="caption" color="textSecondary">
-                {sourceMessage}
-              </AppText>
-            ) : null}
-          </Card>
-
-          <View style={styles.metaFooter}>
-            <AppText variant="caption" color="textTertiary">
-              Record ID {tender.id} · added {formatDate(tender.created_at) ?? 'unknown'}
-              {tender.updated_at !== tender.created_at
-                ? ` · updated ${formatDate(tender.updated_at) ?? 'unknown'}`
-                : ''}
-            </AppText>
-            <AppText variant="caption" color="textTertiary">
-              Bidders Nepal aggregates public notices. Always verify details with the procuring
-              entity.
-            </AppText>
-          </View>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -398,11 +616,10 @@ export default function TenderDetailScreen() {
           style={styles.saveButton}
         />
         <Button
-          label="View original notice"
-          icon="open-outline"
+          label={documents.length > 0 ? `View documents · ${documents.length}` : 'View documents'}
+          icon="document-attach-outline"
           size="lg"
-          onPress={onOpenSource}
-          disabled={!tender.source_url}
+          onPress={() => setActiveTab('documents')}
           style={styles.primaryButton}
         />
       </View>
@@ -424,7 +641,11 @@ function DetailRow({
   const { colors } = useAppTheme();
   const missing = !value || value.trim().length === 0;
   return (
-    <View style={[styles.detailRow, !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+    <View
+      style={[
+        styles.detailRow,
+        !last && { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth },
+      ]}>
       <View style={styles.detailLabel}>
         <Ionicons name={icon} size={14} color={colors.textTertiary} />
         <AppText variant="small" color="textSecondary">
@@ -470,6 +691,9 @@ function DetailSkeleton({ onBack }: { onBack: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    paddingHorizontal: 0,
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -565,6 +789,26 @@ const styles = StyleSheet.create({
     fontFamily: 'PlusJakartaSans_600SemiBold',
     fontSize: 11,
   },
+  tabsWrap: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
+  },
+  tabs: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: 3,
+    gap: 2,
+  },
+  tab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    height: 34,
+    borderRadius: radii.sm,
+  },
   body: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
@@ -608,12 +852,19 @@ const styles = StyleSheet.create({
   description: {
     lineHeight: 22,
   },
+  documentsSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  documentsTab: {
+    gap: spacing.md,
+  },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.md,
-    marginBottom: spacing.md,
   },
   sectionTitle: {
     flex: 1,
@@ -621,6 +872,21 @@ const styles = StyleSheet.create({
   },
   documentList: {
     gap: spacing.sm,
+  },
+  changeRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+  },
+  changeDot: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sourceRow: {
     flexDirection: 'row',

@@ -147,7 +147,9 @@ def test_coverage_and_public_sources(client):
     body = coverage.json()
     assert body["local_governments"]["directory_entries"] == 753
     assert body["local_governments"]["registered_in_platform"] == 753
-    assert body["sources"]["requires_authorization"] >= 2
+    # Only the third-party portal still requires written authorisation; the
+    # official e-GP portal is collected from its public listing.
+    assert body["sources"]["requires_authorization"] >= 1
 
     sources = client.get("/api/v1/sources").json()
     assert sources["count"] >= 1

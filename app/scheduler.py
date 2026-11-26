@@ -12,6 +12,7 @@ from app.collectors.registry import sync_registry
 from app.collectors.runner import run_collection
 from app.config import settings
 from app.database import SessionLocal
+from app.services.document_refresh import refresh_documents
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,19 @@ def _discover() -> None:
         log.info("Local-government website discovery: %s", result)
     except Exception:
         log.exception("Local-government website discovery failed")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _refresh_documents() -> None:
+    """Re-check document reachability so broken links are labelled honestly."""
+    db = SessionLocal()
+    try:
+        result = refresh_documents(db)
+        log.info("Document availability refresh: %s", result)
+    except Exception:
+        log.exception("Document availability refresh failed")
         db.rollback()
     finally:
         db.close()
@@ -90,6 +104,18 @@ def start_scheduler() -> None:
             )
         except ValueError:
             log.warning("Invalid TENDER_FULL_SCAN_CRON=%r; daily scan disabled", settings.full_scan_cron)
+
+    if settings.document_refresh_enabled:
+        scheduler.add_job(
+            _refresh_documents,
+            "interval",
+            hours=settings.document_refresh_hours,
+            id="document-availability-refresh",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=1800,
+            replace_existing=True,
+        )
 
     if settings.local_discovery_enabled:
         scheduler.add_job(

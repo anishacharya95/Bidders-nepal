@@ -76,11 +76,16 @@ export function useTenderFeed({
   const queryKey = JSON.stringify([
     filters.q.trim(),
     filters.category,
+    filters.procurementType,
     filters.province,
     filters.district,
+    filters.municipality,
     filters.organization,
+    filters.ministry,
+    filters.source,
     filters.status,
     filters.verificationStatus,
+    filters.hasDocuments,
     sort,
     endpoint,
     enabled,
@@ -93,11 +98,18 @@ export function useTenderFeed({
         filters: currentFilters,
         page,
         pageSize: 100,
+        sort: sortRef.current,
         force,
         signal,
       });
     }
-    return fetchAllTenders({ filters: currentFilters, page, signal, force });
+    return fetchAllTenders({
+      filters: currentFilters,
+      page,
+      sort: sortRef.current,
+      signal,
+      force,
+    });
   }, []);
 
   const load = useCallback(

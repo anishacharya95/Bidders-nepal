@@ -75,6 +75,12 @@ class TenderDocumentOut(BaseModel):
     last_checked_at: datetime | None = None
     content_type: str | None = None
     is_public: bool | None = True
+    discovered_at: datetime | None = None
+    http_status: int | None = None
+    is_available: bool | None = None
+    storage_key: str | None = None
+    checked_count: int | None = None
+    content_hash: str | None = None
 
 
 class TenderOut(BaseModel):
@@ -97,6 +103,9 @@ class TenderOut(BaseModel):
     eligibility: str | None = None
     contact_info: str | None = None
     notice_type: str | None = None
+    procurement_type: str | None = None
+    ministry: str | None = None
+    department: str | None = None
     source_name: str
     source_url: str | None
     document_url: str | None
@@ -142,6 +151,13 @@ class SavedSearchCreate(BaseModel):
             "status",
             "verification_status",
             "has_documents",
+            "procurement_type",
+            "ministry",
+            "department",
+            "notice_number",
+            "source",
+            "sort",
+            "expiring_days",
         }
         return {key: item for key, item in value.items() if key in allowed and item not in (None, "")}
 

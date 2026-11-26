@@ -23,7 +23,9 @@ from app.models import (
     TenderChange,
     TenderDocument,
 )
-from app.services.documents import DiscoveredDocument, probe_document
+from app.services import cache
+from app.services.classification import apply_classification
+from app.services.documents import DiscoveredDocument, document_url_fingerprint, probe_document
 from app.services.duplicates import content_hash, find_duplicate
 
 log = logging.getLogger(__name__)
@@ -99,8 +101,13 @@ def _document_rows(
                 download_status=metadata.status if metadata else "unverified",
                 content_type=metadata.content_type if metadata else None,
                 file_size_bytes=metadata.size_bytes if metadata else None,
+                http_status=metadata.http_status if metadata else None,
+                is_available=(metadata.status == "available") if metadata else None,
                 last_checked_at=_now() if metadata else None,
+                discovered_at=_now(),
+                content_hash=document_url_fingerprint(doc.url),
                 is_public=not metadata or metadata.status != "restricted",
+                checked_count=1 if metadata else 0,
             )
         )
     return rows
@@ -199,6 +206,7 @@ def _apply_candidate(tender: Tender, candidate: Candidate, db: Session) -> list[
         notice_number=tender.notice_number,
         deadline=tender.deadline,
     )
+    apply_classification(tender)
     return changes
 
 
@@ -400,6 +408,7 @@ def run_collection(
                         last_seen_at=_now(),
                         seen_count=1,
                     )
+                    apply_classification(tender)
                     db.add(tender)
                     db.flush()
                     for document in documents:
@@ -484,6 +493,8 @@ def run_collection(
                 log.warning("Collection failed for %s: %s", source.name if source else "?", message)
 
         closed = close_expired_tenders(db)
+        # New records make cached stats/facets stale.
+        cache.invalidate()
         run.finished_at = _now()
         run.duration_ms = int((time.monotonic() - started_monotonic) * 1000)
         run.status = (

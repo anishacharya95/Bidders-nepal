@@ -71,6 +71,18 @@ class Settings:
     local_discovery_enabled = _bool("TENDER_LOCAL_DISCOVERY", True)
     local_discovery_batch = _int("TENDER_LOCAL_DISCOVERY_BATCH", 8, 1)
 
+    # Document streaming / viewer
+    document_connect_timeout = _int("TENDER_DOCUMENT_CONNECT_TIMEOUT", 10, 2)
+    document_read_timeout = _int("TENDER_DOCUMENT_READ_TIMEOUT", 45, 5)
+    document_max_stream_bytes = _int("TENDER_DOCUMENT_MAX_STREAM_BYTES", 30_000_000, 100_000)
+    # Periodic re-check of document reachability (broken links are discovered
+    # without re-scanning every tender page).
+    document_refresh_enabled = _bool("TENDER_DOCUMENT_REFRESH", True)
+    document_refresh_hours = _int("TENDER_DOCUMENT_REFRESH_HOURS", 6, 1)
+    document_refresh_batch = _int("TENDER_DOCUMENT_REFRESH_BATCH", 40, 1)
+    # Small in-process cache for filter menus and stats.
+    search_cache_seconds = _int("TENDER_SEARCH_CACHE_SECONDS", 30, 0)
+
     extra_source_urls = os.getenv("TENDER_SOURCE_URLS", "")
     # JSON notice feeds, e.g. https://bidders-nepal-api.onrender.com/api/v1/tenders/all
     # Each entry is registered as a `json_api` source and fetched even when it

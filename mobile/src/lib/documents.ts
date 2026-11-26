@@ -3,6 +3,7 @@ import * as Sharing from 'expo-sharing';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking, Platform, Share } from 'react-native';
 
+import { documentDownloadUrl } from '@/api/tenders';
 import { fileExtension, fileNameFromUrl } from '@/lib/format';
 import type { TenderDocument } from '@/types/tender';
 
@@ -89,5 +90,42 @@ export async function shareTenderLink(url: string, title: string): Promise<Actio
     return { ok: true };
   } catch {
     return { ok: false, message: 'Sharing was cancelled.' };
+  }
+}
+
+/**
+ * Download through the API (same-origin stream, safe URL handling) and offer the
+ * system share/save sheet. Used by the in-app viewer, where the document may be
+ * link-only or hosted on a government server that mobile browsers handle badly.
+ */
+export async function downloadDocumentById(
+  documentId: number,
+  label: string,
+  fileFormat?: string | null,
+): Promise<ActionResult> {
+  const url = documentDownloadUrl(documentId);
+  if (Platform.OS === 'web') {
+    await Linking.openURL(url);
+    return { ok: true, message: 'Download started in a new tab.' };
+  }
+  try {
+    const filename = safeFileName(label, `document.${(fileFormat || 'pdf').toLowerCase()}`);
+    const target = `${FileSystem.cacheDirectory ?? ''}${filename}`;
+    const result = await FileSystem.downloadAsync(url, target);
+    if (!result?.uri) throw new Error('Download failed');
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(result.uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Save bid document',
+        UTI: 'com.adobe.pdf',
+      });
+      return { ok: true, message: 'Downloaded. Choose where to save it.' };
+    }
+    return { ok: true, message: `Saved to ${result.uri}` };
+  } catch {
+    return {
+      ok: false,
+      message: 'The download failed. The source may have moved the file; try again later.',
+    };
   }
 }

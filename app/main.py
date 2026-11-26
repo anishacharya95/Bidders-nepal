@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
-from app.api import admin, admin_ui, auth, public
+from app.api import admin, admin_ui, auth, documents, public
 from app import web as website
 from app.collectors.registry import sync_registry
 from app.config import settings
@@ -20,6 +20,7 @@ from app.database import SessionLocal, engine, get_db
 from app.database_schema import ensure_schema
 from app.models import Source, Tender, TenderDocument, User
 from app.scheduler import scheduler_snapshot, start_scheduler, stop_scheduler
+from app.services.classification import backfill_classifications
 from app.security import hash_password
 
 logging.basicConfig(
@@ -59,6 +60,9 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db:
             result = sync_registry(db)
             log.info("Source registry synced: %s", result)
+            filled = backfill_classifications(db)
+            if any(filled.values()):
+                log.info("Derived search facets backfilled: %s", filled)
     except Exception:
         log.exception("Source registry sync failed at startup")
     start_scheduler()
@@ -88,6 +92,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="app/static", check_dir=False), name="static")
 
 app.include_router(public.router)
+app.include_router(documents.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(admin_ui.router)
@@ -119,6 +124,8 @@ def api_index():
         "docs": "/docs",
         "health": "/health",
         "tenders": "/api/v1/tenders/all",
+        "search": "/api/v1/search",
+        "documents": "/api/v1/documents",
         "sources": "/api/v1/sources",
         "coverage": "/api/v1/coverage",
         "stats": "/api/v1/stats",
