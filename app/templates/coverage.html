@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Local government coverage</h1>
+    <p class="muted">Directory: {{ directory.dataset_source }}</p>
+  </div>
+  <form method="post" action="/admin/discovery">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="btn primary" type="submit">Discover websites (batch)</button>
+  </form>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Directory entries</span><strong>{{ coverage.dataset.total }}</strong><small>{{ coverage.dataset.metropolitan }} metro · {{ coverage.dataset.sub_metropolitan }} sub-metro</small></div>
+  <div class="card stat"><span class="label">Municipalities</span><strong>{{ coverage.dataset.municipality }}</strong><small>urban local units</small></div>
+  <div class="card stat"><span class="label">Rural municipalities</span><strong>{{ coverage.dataset.rural_municipality }}</strong><small>gaunpalika</small></div>
+  <div class="card stat"><span class="label">Registered in platform</span><strong>{{ coverage.local_governments.registered_in_platform }}</strong><small>{{ coverage.local_governments.website_verified }} sites verified</small></div>
+  <div class="card stat"><span class="label">Tender pages verified</span><strong>{{ coverage.local_governments.tender_page_verified }}</strong><small>{{ coverage.local_governments.scanned_successfully }} scanned OK</small></div>
+  <div class="card stat"><span class="label">Inaccessible</span><strong>{{ coverage.local_governments.inaccessible }}</strong><small>{{ coverage.local_governments.inactive }} disabled</small></div>
+</section>
+
+<section class="card">
+  <h2>Coverage by type</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Type</th><th>Directory</th><th>Registered</th><th>Website verified</th><th>Tender page verified</th><th>Scanned OK</th><th>Failing</th></tr></thead>
+      <tbody>
+      {% for row in coverage.local_governments.by_type %}
+        <tr>
+          <td>{{ row.type }}</td>
+          <td>{{ row.directory_expected }}</td>
+          <td>{{ row.registered }}</td>
+          <td>{{ row.website_verified }}</td>
+          <td>{{ row.tender_page_verified }}</td>
+          <td>{{ row.scanned_successfully }}</td>
+          <td>{{ row.failing }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="hint">{{ coverage.note }}</p>
+</section>
+
+<section class="card">
+  <h2>Discovery status</h2>
+  <ul class="facts">
+    {% for key, value in coverage.local_governments.statuses.items() %}
+    <li><span>{{ key.replace('_',' ') }}</span><strong>{{ value }}</strong></li>
+    {% endfor %}
+  </ul>
+  <p class="hint">Websites are registered only when an HTTPS page loads and its content names the local government. Tender pages require an on-site link whose label or URL indicates procurement. All 753 are not claimed as connected.</p>
+</section>
+{% endblock %}

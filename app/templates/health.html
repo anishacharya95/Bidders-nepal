@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1>System health</h1><p class="muted">Database, scheduler and collection diagnostics.</p></div>
+  <a class="btn ghost" href="/health">Public health JSON</a>
+</div>
+
+<section class="grid cards">
+  <div class="card stat">
+    <span class="label">Database</span>
+    <strong><span class="pill {{ 'verified' if db_ok else 'rejected' }}">{{ 'connected' if db_ok else 'error' }}</span></strong>
+    <small>{{ dialect }}{% if db_error %} · {{ db_error[:120] }}{% endif %}</small>
+  </div>
+  <div class="card stat">
+    <span class="label">Scheduler</span>
+    <strong><span class="pill {{ 'verified' if scheduler.running else 'pending' }}">{{ 'running' if scheduler.running else 'stopped' }}</span></strong>
+    <small>Priority every {{ settings.priority_interval_minutes }} min</small>
+  </div>
+  <div class="card stat"><span class="label">Sources</span><strong>{{ stats.sources.registered }}</strong><small>{{ stats.sources.failing }} failing · {{ stats.sources.never_scanned }} never scanned</small></div>
+  <div class="card stat"><span class="label">Collection runs</span><strong>{{ runs }}</strong><small>{{ failed_scans }} failed source scans</small></div>
+  <div class="card stat"><span class="label">Tenders</span><strong>{{ stats.tenders.total }}</strong><small>{{ stats.tenders.pending }} pending review</small></div>
+  <div class="card stat"><span class="label">Document failures</span><strong>{{ stats.documents.failed }}</strong><small>{{ stats.documents.total }} documents tracked</small></div>
+</section>
+
+<section class="card">
+  <h2>Scheduled jobs</h2>
+  {% if scheduler.jobs %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Job</th><th>Next run</th><th>Trigger</th></tr></thead>
+      <tbody>
+      {% for job in scheduler.jobs %}
+        <tr><td>{{ job.id }}</td><td class="nowrap">{{ job.next_run or '—' }}</td><td class="small">{{ job.trigger }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">Scheduler is not running. Collection can still be started manually.</p>
+  {% endif %}
+  {% if scheduler.last_runs %}
+  <ul class="facts">
+    {% for key, value in scheduler.last_runs.items() %}<li><span>Last {{ key }} run</span><strong>{{ value }}</strong></li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Readiness checks</h2>
+  <ul class="facts">
+    <li><span>Admin account configured</span><strong>{{ 'yes' if settings.admin_email else 'no' }}</strong></li>
+    <li><span>JWT secret configured</span><strong>{{ 'yes' if settings.jwt_secret else 'no' }}</strong></li>
+    <li><span>Collector enabled</span><strong>{{ 'yes' if settings.collector_enabled else 'no' }}</strong></li>
+    <li><span>Full scan cron</span><strong>{{ settings.full_scan_cron }}</strong></li>
+    <li><span>Local discovery</span><strong>{{ 'enabled' if settings.local_discovery_enabled else 'disabled' }}</strong></li>
+    <li><span>HTTP timeout</span><strong>{{ settings.collector_http_timeout }}s</strong></li>
+    <li><span>Detected tender changes</span><strong>{{ changes }}</strong></li>
+  </ul>
+  <p class="hint">API docs: <a href="/docs">/docs</a> · Public feed: <a href="/api/v1/tenders/all">/api/v1/tenders/all</a> · Coverage: <a href="/api/v1/coverage">/api/v1/coverage</a></p>
+</section>
+{% endblock %}

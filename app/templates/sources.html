@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Sources</h1>
+    <p class="muted">{{ total }} registered sources. A source counts as connected only after its tender page is verified and scanned.</p>
+  </div>
+  <a class="btn primary" href="/admin/sources/new">Add source</a>
+</div>
+
+<form class="filters card" method="get" action="/admin/sources">
+  <input type="search" name="q" value="{{ q }}" placeholder="Name, district or organisation">
+  <select name="source_type">
+    <option value="">All types</option>
+    {% for item in types %}<option value="{{ item }}" {% if item == source_type %}selected{% endif %}>{{ item.replace('_', ' ') }}</option>{% endfor %}
+  </select>
+  <select name="status">
+    <option value="">Any status</option>
+    {% for item in ['unregistered', 'website_found', 'discovered', 'active', 'inaccessible', 'requires_authorization'] %}
+    <option value="{{ item }}" {% if item == status %}selected{% endif %}>{{ item.replace('_', ' ') }}</option>
+    {% endfor %}
+  </select>
+  <label class="check"><input type="checkbox" name="failing" value="1" {% if failing %}checked{% endif %}> Failing only</label>
+  <button class="btn" type="submit">Filter</button>
+  <a class="btn ghost" href="/admin/sources">Reset</a>
+</form>
+
+<section class="card">
+  <div class="table-wrap">
+    <table class="wide">
+      <thead>
+        <tr><th>Source</th><th>Type</th><th>Location</th><th>Tender page</th><th>Status</th><th>Last success</th><th>Fail</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+      {% for source in rows %}
+        <tr>
+          <td>
+            <a href="/admin/sources/{{ source.id }}/edit">{{ source.name }}</a>
+            <div class="muted small">{{ source.organization_name or '' }}</div>
+          </td>
+          <td class="small">{{ source.source_type.replace('_', ' ') }}</td>
+          <td class="small">{{ source.province or '—' }}{% if source.district %} · {{ source.district }}{% endif %}</td>
+          <td class="small">
+            {% if source.tender_page_url %}
+              <a href="{{ source.tender_page_url }}" target="_blank" rel="noopener noreferrer">Open</a>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="pill {{ 'active' if source.active and source.last_success_at else 'pending' }}">{{ source.discovery_status.replace('_', ' ') }}</span>
+            {% if not source.active %}<span class="pill off">disabled</span>{% endif %}
+            {% if source.requires_authorization %}<span class="pill warn">auth required</span>{% endif %}
+          </td>
+          <td class="small nowrap">{{ source.last_success_at | dt }}</td>
+          <td>{{ source.consecutive_failures }}</td>
+          <td class="row-actions">
+            {% if source.tender_page_url %}
+            <form method="post" action="/admin/sources/{{ source.id }}/scan">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="link" type="submit">Scan</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/sources/{{ source.id }}/discover">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="link" type="submit">Discover site</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/sources/{{ source.id }}/toggle">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="link" type="submit">{{ 'Disable' if source.active else 'Enable' }}</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="empty">No sources match these filters.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pages > 1 %}
+  <nav class="pager">
+    {% if page > 1 %}<a class="btn ghost" href="/admin/sources?page={{ page - 1 }}&q={{ q }}&source_type={{ source_type }}&status={{ status }}{% if failing %}&failing=1{% endif %}">← Previous</a>{% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn ghost" href="/admin/sources?page={{ page + 1 }}&q={{ q }}&source_type={{ source_type }}&status={{ status }}{% if failing %}&failing=1{% endif %}">Next →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

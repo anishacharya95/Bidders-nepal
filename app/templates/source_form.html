@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{{ 'Edit source' if source else 'Add source' }}</h1>
+    <p class="muted">Only public HTTPS government sources are fetched. Sources needing login or CAPTCHA must stay disabled.</p>
+  </div>
+  <a class="btn ghost" href="/admin/sources">Back to sources</a>
+</div>
+
+<form class="card form-grid" method="post" action="{{ '/admin/sources/%s/edit' % source.id if source else '/admin/sources/new' }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label class="span-2">Name
+    <input type="text" name="name" required maxlength="300" value="{{ source.name if source else '' }}">
+  </label>
+  <label class="span-2">Organisation
+    <input type="text" name="organization_name" maxlength="300" value="{{ source.organization_name if source else '' }}">
+  </label>
+  <label>Source type
+    <select name="source_type">
+      {% set current_type = source.source_type if source else 'agency' %}
+      {% for item in ['central_agency','department','ministry','agency','utility','provincial','metropolitan_city','sub_metropolitan_city','municipality','rural_municipality','egp_portal','third_party','configured'] %}
+      <option value="{{ item }}" {% if item == current_type %}selected{% endif %}>{{ item.replace('_',' ') }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Collector
+    {% set collector = source.collector_key if source else 'generic_html' %}
+    <select name="collector_key">
+      {% for item in ['generic_html','ppmo','nea','manual'] %}
+      <option value="{{ item }}" {% if item == collector %}selected{% endif %}>{{ item }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Province
+    <input type="text" name="province" value="{{ source.province if source and source.province else '' }}">
+  </label>
+  <label>District
+    <input type="text" name="district" value="{{ source.district if source and source.district else '' }}">
+  </label>
+  <label class="span-2">Official website (https)
+    <input type="url" name="official_website" placeholder="https://example.gov.np/" value="{{ source.official_website if source and source.official_website else '' }}">
+  </label>
+  <label class="span-2">Tender page URL (https)
+    <input type="url" name="tender_page_url" placeholder="https://example.gov.np/tender" value="{{ source.tender_page_url if source and source.tender_page_url else '' }}">
+  </label>
+  <label>Priority (1 highest)
+    <input type="number" name="priority" min="1" max="5" value="{{ source.priority if source else 3 }}">
+  </label>
+  <div class="checks">
+    <label class="check"><input type="checkbox" name="active" value="1" {% if not source or source.active %}checked{% endif %}> Active</label>
+    <label class="check"><input type="checkbox" name="requires_authorization" value="1" {% if source and source.requires_authorization %}checked{% endif %}> Requires authorized access</label>
+  </div>
+  <label class="span-2">Notes
+    <textarea name="notes" rows="3">{{ source.notes if source and source.notes else '' }}</textarea>
+  </label>
+  <div class="span-2 form-actions">
+    <button class="btn primary" type="submit">Save source</button>
+    {% if source and source.tender_page_url %}
+    <a class="btn ghost" href="{{ source.tender_page_url }}" target="_blank" rel="noopener noreferrer">Open tender page</a>
+    {% endif %}
+  </div>
+</form>
+
+{% if source %}
+<section class="card">
+  <h2>Health</h2>
+  <ul class="facts">
+    <li><span>Discovery status</span><strong>{{ source.discovery_status }}</strong></li>
+    <li><span>Last checked</span><strong>{{ source.last_checked_at | dt }}</strong></li>
+    <li><span>Last success</span><strong>{{ source.last_success_at | dt }}</strong></li>
+    <li><span>Consecutive failures</span><strong>{{ source.consecutive_failures }}</strong></li>
+    <li><span>Notices found (last scan)</span><strong>{{ source.notices_found }}</strong></li>
+    <li><span>Documents found (last scan)</span><strong>{{ source.documents_found }}</strong></li>
+    <li><span>Last error</span><strong class="error-text">{{ source.last_error or '—' }}</strong></li>
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

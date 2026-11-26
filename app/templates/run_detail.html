@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Run #{{ run.id }}</h1>
+    <p class="muted">{{ run.trigger }} · {{ run.mode }} · started {{ run.started_at | dt }}</p>
+  </div>
+  <a class="btn ghost" href="/admin/runs">Back to runs</a>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Status</span><strong><span class="pill {{ run.status }}">{{ run.status }}</span></strong><small>{{ ((run.duration_ms or 0) / 1000) | round(1) }}s</small></div>
+  <div class="card stat"><span class="label">Sources checked</span><strong>{{ run.sources_checked }}</strong><small>{{ run.sources_ok }} ok · {{ run.sources_failed }} failed</small></div>
+  <div class="card stat"><span class="label">Candidates</span><strong>{{ run.candidates_found }}</strong><small>{{ run.duplicates }} duplicates skipped</small></div>
+  <div class="card stat"><span class="label">Inserted</span><strong>{{ run.inserted }}</strong><small>{{ run.documents_found }} documents</small></div>
+</section>
+
+{% if run.notes %}<p class="hint card">{{ run.notes }}</p>{% endif %}
+{% if run.errors_json and run.errors_json != '[]' %}
+<section class="card">
+  <h2>Runner errors</h2>
+  <pre class="errors">{{ run.errors_json }}</pre>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Source scans</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Source</th><th>Status</th><th>HTTP</th><th>Items</th><th>Inserted</th><th>Duplicates</th><th>Docs</th><th>Duration</th><th>Error</th></tr></thead>
+      <tbody>
+      {% for scan in run.scans | sort(attribute='source_name') %}
+        <tr>
+          <td>{{ scan.source_name }}<div class="muted small">{{ scan.url }}</div></td>
+          <td><span class="pill {{ scan.status }}">{{ scan.status }}</span></td>
+          <td>{{ scan.http_status or '—' }}</td>
+          <td>{{ scan.items_found }}</td>
+          <td>{{ scan.inserted }}</td>
+          <td>{{ scan.duplicates }}</td>
+          <td>{{ scan.documents_found }}</td>
+          <td class="small nowrap">{{ ((scan.duration_ms or 0) / 1000) | round(1) }}s</td>
+          <td class="error-text small">{{ (scan.error or '')[:180] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="9" class="empty">No per-source scans recorded.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Overview</h1>
+    <p class="muted">Live collection, source health and review queue.</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="/admin/run">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="mode" value="priority">
+      <button class="btn primary" type="submit">Run priority scan</button>
+    </form>
+    <form method="post" action="/admin/run">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="mode" value="full">
+      <button class="btn" type="submit">Run full scan</button>
+    </form>
+    <form method="post" action="/admin/retry-failed">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="btn" type="submit">Retry failing</button>
+    </form>
+  </div>
+</div>
+
+<section class="grid cards">
+  <div class="card stat"><span class="label">Registered sources</span><strong>{{ stats.sources.registered }}</strong><small>{{ stats.sources.active }} active · {{ stats.sources.inactive }} off</small></div>
+  <div class="card stat"><span class="label">Successfully scanned</span><strong>{{ stats.sources.scanned_successfully }}</strong><small>{{ stats.sources.failing }} failing · {{ stats.sources.requires_authorization }} authorized-only</small></div>
+  <div class="card stat"><span class="label">Tenders</span><strong>{{ stats.tenders.total }}</strong><small>{{ stats.tenders.pending }} pending · {{ stats.tenders.verified }} verified</small></div>
+  <div class="card stat"><span class="label">Open · closing in 7 days</span><strong>{{ stats.tenders.open }}</strong><small>{{ stats.tenders.closing_soon_7d }} closing soon</small></div>
+  <div class="card stat"><span class="label">Bid documents</span><strong>{{ stats.documents.total }}</strong><small>{{ stats.documents.available }} verified reachable · {{ stats.documents.failed }} failed</small></div>
+  <div class="card stat"><span class="label">New in last 24h</span><strong>{{ stats.tenders.new_last_24h }}</strong><small>{{ stats.collection.duplicates_detected }} duplicate links</small></div>
+</section>
+
+<div class="split">
+  <section class="card">
+    <div class="card-head">
+      <h2>Recent collection runs</h2>
+      <a class="small" href="/admin/runs">All runs →</a>
+    </div>
+    {% if runs %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Run</th><th>Mode</th><th>Status</th><th>Checked</th><th>Inserted</th><th>Failed</th><th>Started</th></tr></thead>
+        <tbody>
+        {% for run in runs %}
+          <tr>
+            <td><a href="/admin/runs/{{ run.id }}">#{{ run.id }}</a></td>
+            <td>{{ run.mode }}</td>
+            <td><span class="pill {{ run.status }}">{{ run.status }}</span></td>
+            <td>{{ run.sources_checked }}</td>
+            <td>{{ run.inserted }}</td>
+            <td>{{ run.sources_failed }}</td>
+            <td class="nowrap">{{ run.started_at | dt }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No collection runs yet. Start a scan above.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Coverage</h2>
+      <a class="small" href="/admin/coverage">Detail →</a>
+    </div>
+    <ul class="facts">
+      <li><span>Local governments in directory</span><strong>{{ stats.coverage.local_governments.directory_entries }}</strong></li>
+      <li><span>Registered in platform</span><strong>{{ stats.coverage.local_governments.registered_in_platform }}</strong></li>
+      <li><span>Website verified</span><strong>{{ stats.coverage.local_governments.website_verified }}</strong></li>
+      <li><span>Tender page verified</span><strong>{{ stats.coverage.local_governments.tender_page_verified }}</strong></li>
+      <li><span>Scanned successfully</span><strong>{{ stats.coverage.local_governments.scanned_successfully }}</strong></li>
+      <li><span>Inaccessible</span><strong>{{ stats.coverage.local_governments.inaccessible }}</strong></li>
+    </ul>
+    <p class="hint">Directory registration is not coverage: a local government counts as connected only after a verified website is successfully scanned.</p>
+  </section>
+</div>
+
+<div class="split">
+  <section class="card">
+    <div class="card-head"><h2>Failing sources</h2><a class="small" href="/admin/sources?failing=1">All failing →</a></div>
+    {% if failing %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Source</th><th>Failures</th><th>Last error</th></tr></thead>
+        <tbody>
+        {% for source in failing %}
+          <tr>
+            <td><a href="/admin/sources/{{ source.id }}/edit">{{ source.name }}</a></td>
+            <td>{{ source.consecutive_failures }}</td>
+            <td class="error-text">{{ (source.last_error or '—')[:160] }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty">No failing sources recorded.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>Awaiting review</h2><a class="small" href="/admin/review">Review queue →</a></div>
+    {% if recent_tenders %}
+    <ul class="list">
+      {% for tender in recent_tenders %}
+      <li>
+        <span class="list-title">{{ tender.title[:110] }}</span>
+        <span class="muted small">{{ tender.organization_name }} · {{ tender.source_name }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">Nothing pending.</p>
+    {% endif %}
+    <div class="scheduler">
+      <strong>Scheduler:</strong>
+      {% if scheduler.running %}
+        running · {{ scheduler.jobs | length }} jobs
+      {% else %}
+        stopped
+      {% endif %}
+      <span class="muted small">Priority every {{ settings.priority_interval_minutes }} min · daily cron {{ settings.full_scan_cron }}</span>
+    </div>
+  </section>
+</div>
+{% endblock %}

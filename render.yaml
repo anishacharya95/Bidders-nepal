@@ -10,7 +10,7 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -27,3 +27,19 @@ services:
         sync: false
       - key: CORS_ORIGINS
         value: "*"
+      - key: ADMIN_COOKIE_SECURE
+        value: "true"
+      - key: ENABLE_TENDER_COLLECTOR
+        value: "true"
+      - key: TENDER_PRIORITY_INTERVAL_MINUTES
+        value: "20"
+      - key: TENDER_TIMEZONE
+        value: "Asia/Kathmandu"
+      - key: TENDER_PROBE_DOCUMENTS
+        value: "true"
+      - key: TENDER_LOCAL_DISCOVERY
+        value: "true"
+      - key: TENDER_PRIORITY_SOURCE_LIMIT
+        value: "24"
+      - key: TENDER_FULL_SOURCE_LIMIT
+        value: "120"

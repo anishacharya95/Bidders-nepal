@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Bidders Nepal Admin</title>
+  <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/admin">
+      <span class="brand-mark">BN</span>
+      <span>Bidders Nepal <small>Admin</small></span>
+    </a>
+    {% if admin is defined and admin %}
+    <nav class="nav">
+      <a href="/admin">Overview</a>
+      <a href="/admin/sources">Sources</a>
+      <a href="/admin/runs">Runs</a>
+      <a href="/admin/review">Review</a>
+      <a href="/admin/duplicates">Duplicates</a>
+      <a href="/admin/documents">Documents</a>
+      <a href="/admin/coverage">Coverage</a>
+      <a href="/admin/health">Health</a>
+    </nav>
+    <div class="account">
+      <span>{{ admin.email }}</span>
+      <form method="post" action="/admin/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="link" type="submit">Sign out</button>
+      </form>
+    </div>
+    {% endif %}
+  </header>
+
+  {% if message %}<div class="flash ok">{{ message }}</div>{% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+  <main class="page">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>Bidders Nepal admin · public data from official government sources</span>
+    <span><a href="/docs">API docs</a> · <a href="/health">Health</a></span>
+  </footer>
+</body>
+</html>

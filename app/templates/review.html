@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Review queue</h1><p class="muted">{{ total }} {{ status }} notices. Verify only against the original source notice.</p></div>
+  <form class="inline" method="get" action="/admin/review">
+    <select name="status">
+      {% for item in ['pending','verified','rejected'] %}<option value="{{ item }}" {% if item == status %}selected{% endif %}>{{ item }}</option>{% endfor %}
+    </select>
+    <button class="btn" type="submit">Show</button>
+  </form>
+</div>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Notice</th><th>Organisation</th><th>Source</th><th>Deadline</th><th>Documents</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for tender in rows %}
+        <tr>
+          <td>
+            <strong>{{ tender.title[:140] }}</strong>
+            <div class="muted small">{{ tender.notice_number or 'No notice number' }} · ID {{ tender.id }}</div>
+          </td>
+          <td class="small">{{ tender.organization_name }}</td>
+          <td class="small">
+            {{ tender.source_name }}
+            {% if tender.source_url %}<div><a href="{{ tender.source_url }}" target="_blank" rel="noopener noreferrer">Original notice</a></div>{% endif %}
+          </td>
+          <td class="small nowrap">{{ tender.deadline | dt }}</td>
+          <td>{{ tender.documents | length }}</td>
+          <td class="row-actions">
+            <form method="post" action="/admin/tenders/{{ tender.id }}/verify">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="decision" value="verified">
+              <button class="link approve" type="submit">Approve</button>
+            </form>
+            <form method="post" action="/admin/tenders/{{ tender.id }}/verify">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="decision" value="rejected">
+              <button class="link reject" type="submit">Reject</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="empty">Nothing in this queue.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pages > 1 %}
+  <nav class="pager">
+    {% if page > 1 %}<a class="btn ghost" href="/admin/review?page={{ page - 1 }}&status={{ status }}">← Previous</a>{% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn ghost" href="/admin/review?page={{ page + 1 }}&status={{ status }}">Next →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

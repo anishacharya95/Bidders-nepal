@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Collection runs</h1><p class="muted">{{ total }} recorded runs.</p></div>
+  <div class="actions">
+    <form method="post" action="/admin/run">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="mode" value="priority">
+      <button class="btn primary" type="submit">Priority scan</button>
+    </form>
+    <form method="post" action="/admin/run">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="mode" value="full">
+      <button class="btn" type="submit">Full scan</button>
+    </form>
+    <form method="post" action="/admin/run">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="mode" value="retry">
+      <button class="btn" type="submit">Retry failing</button>
+    </form>
+  </div>
+</div>
+
+<section class="card">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Run</th><th>Trigger</th><th>Mode</th><th>Status</th><th>Checked</th><th>OK</th><th>Failed</th><th>Found</th><th>Inserted</th><th>Duplicates</th><th>Docs</th><th>Duration</th><th>Started</th></tr></thead>
+      <tbody>
+      {% for run in runs %}
+        <tr>
+          <td><a href="/admin/runs/{{ run.id }}">#{{ run.id }}</a></td>
+          <td class="small">{{ run.trigger }}</td>
+          <td class="small">{{ run.mode }}</td>
+          <td><span class="pill {{ run.status }}">{{ run.status }}</span></td>
+          <td>{{ run.sources_checked }}</td>
+          <td>{{ run.sources_ok }}</td>
+          <td>{{ run.sources_failed }}</td>
+          <td>{{ run.candidates_found }}</td>
+          <td>{{ run.inserted }}</td>
+          <td>{{ run.duplicates }}</td>
+          <td>{{ run.documents_found }}</td>
+          <td class="small nowrap">{{ ((run.duration_ms or 0) / 1000) | round(1) }}s</td>
+          <td class="small nowrap">{{ run.started_at | dt }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="13" class="empty">No runs recorded yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pages > 1 %}
+  <nav class="pager">
+    {% if page > 1 %}<a class="btn ghost" href="/admin/runs?page={{ page - 1 }}">← Previous</a>{% endif %}
+    <span>Page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}<a class="btn ghost" href="/admin/runs?page={{ page + 1 }}">Next →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

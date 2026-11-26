@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="login-wrap">
+  <div class="card login-card">
+    <h1>Admin sign in</h1>
+    <p class="muted">Restricted area for source management, collection runs and tender review.</p>
+    <form method="post" action="/admin/login" class="stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Email
+        <input type="email" name="email" autocomplete="username" required autofocus>
+      </label>
+      <label>Password
+        <input type="password" name="password" autocomplete="current-password" required minlength="8">
+      </label>
+      <button class="btn primary" type="submit">Sign in</button>
+    </form>
+    {% if not settings.admin_email %}
+    <p class="hint">Server setup: set <code>ADMIN_EMAIL</code> and <code>ADMIN_PASSWORD</code> to create the first admin.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
