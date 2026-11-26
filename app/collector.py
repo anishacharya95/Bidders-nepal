@@ -174,12 +174,15 @@ def _source_name(url: str) -> str:
     return host.replace("www.", "").split(".")[0].replace("mun", "").title() + " Municipality"
 
 
+def _is_document_url(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    return path.endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip"))
+
+
 def _candidate_rows(soup: BeautifulSoup, page_url: str):
-    """Yield (title, organization, notice number, deadline, original link)."""
+    """Yield title, organization, notice number, deadline, source page, document URL."""
     host = (urlparse(page_url).hostname or "").lower()
     if host in {"nea.org.np", "www.nea.org.np"}:
-        # NEA's public register is a structured table: office, tender no.,
-        # tender name, document links, status, and close date.
         for row in soup.select("table tr"):
             cells = row.find_all(["td", "th"], recursive=False)
             if len(cells) < 6:
@@ -188,27 +191,27 @@ def _candidate_rows(soup: BeautifulSoup, page_url: str):
             if len(values) < 7 or not values[2] or not values[3]:
                 continue
             title, office, number = values[3], values[1], values[2]
-            if not _looks_like_notice(title) and not _looks_like_notice(number + " " + title):
-                # NEA titles often omit the phrase "tender"; table placement
-                # itself identifies them as tender register entries.
-                if len(title) < 12:
-                    continue
+            if len(title) < 12:
+                continue
             links = cells[4].select("a[href]")
-            link = urljoin(page_url, links[0]["href"]) if links else page_url
-            yield title, office, number, _deadline(values[-1]), link
+            doc_url = urljoin(page_url, links[0]["href"]) if links else None
+            if doc_url and not _allowed(doc_url):
+                doc_url = None
+            yield title, office, number, _deadline(" ".join(values)), page_url, doc_url
         return
 
     for anchor in soup.select("a[href]"):
         title = " ".join(anchor.get_text(" ", strip=True).split())
         if len(title) < 12 or len(title) > 500 or not _looks_like_notice(title):
             continue
-        link = _canonical_url(urljoin(page_url, (anchor.get("href") or "").strip()))
-        if not _allowed(link) or link == _canonical_url(page_url):
+        target = _canonical_url(urljoin(page_url, (anchor.get("href") or "").strip()))
+        if not _allowed(target) or target == _canonical_url(page_url):
             continue
-        if host in {"ppmo.gov.np", "www.ppmo.gov.np"} and not re.match(r"^/content/\d+/", urlparse(link).path):
+        if host in {"ppmo.gov.np", "www.ppmo.gov.np"} and not re.match(r"^/content/\\d+/", urlparse(target).path):
             continue
-        yield title, _organization_from_title(title), _notice_number(title), _deadline(title), link
-
+        document_url = target if _is_document_url(target) else None
+        source_page = page_url if document_url else target
+        yield title, _organization_from_title(title), _notice_number(title), _deadline(title), source_page, document_url
 
 def _duplicate(db: Session, url: str, notice: str | None, title: str, organization: str) -> bool:
     existing_urls = db.query(Tender.id).filter(Tender.source_url == url).first()
@@ -244,7 +247,7 @@ def collect_public_notices(db: Session) -> dict:
             if "text/html" not in response.headers.get("Content-Type", "").lower():
                 continue
             soup = BeautifulSoup(response.text, "html.parser")
-            for title, organization, notice, deadline, target in _candidate_rows(soup, response.url):
+            for title, organization, notice, deadline, target, document_url in _candidate_rows(soup, response.url):
                 discovered += 1
                 if _duplicate(db, target, notice, title, organization):
                     duplicates += 1
@@ -260,6 +263,7 @@ def collect_public_notices(db: Session) -> dict:
                     deadline=deadline,
                     source_name=_source_name(response.url),
                     source_url=target,
+                    document_url=document_url,
                     verification_status="pending",
                     status="open",
                 ))
