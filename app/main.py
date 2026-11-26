@@ -85,6 +85,39 @@ def list_tenders(q: str | None = None, category: str | None = None,
     return {"items": [TenderOut.model_validate(x).model_dump(mode="json") for x in rows],
             "total": total, "page": page, "page_size": page_size}
 
+@app.get("/api/v1/tenders/all")
+def list_all_tenders(q: str | None = None, category: str | None = None,
+                     province: str | None = None, district: str | None = None,
+                     status: str | None = None, verification_status: str | None = Query(
+                         default=None, pattern="^(pending|verified|rejected)$"),
+                     include_rejected: bool = False,
+                     page: int = Query(1, ge=1),
+                     page_size: int = Query(100, ge=1, le=500),
+                     db: Session = Depends(get_db)):
+    """Public full-record feed. Includes pending and verified tenders; rejected are excluded by default."""
+    query = db.query(Tender)
+    if verification_status:
+        query = query.filter(Tender.verification_status == verification_status)
+    elif not include_rejected:
+        query = query.filter(Tender.verification_status != "rejected")
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.filter(or_(Tender.title.ilike(term), Tender.organization_name.ilike(term),
+                                 Tender.notice_number.ilike(term), Tender.description.ilike(term)))
+    if category:
+        query = query.filter(Tender.category == category)
+    if province:
+        query = query.filter(Tender.province.ilike(province))
+    if district:
+        query = query.filter(Tender.district.ilike(district))
+    if status:
+        query = query.filter(Tender.status == status)
+    total = query.count()
+    rows = query.order_by(Tender.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return {"items": [TenderOut.model_validate(x).model_dump(mode="json") for x in rows],
+            "total": total, "page": page, "page_size": page_size}
+
+
 @app.get("/api/v1/tenders/{tender_id}", response_model=TenderOut)
 def tender_detail(tender_id: int, db: Session = Depends(get_db)):
     tender = db.get(Tender, tender_id)
