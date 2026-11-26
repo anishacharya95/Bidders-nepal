@@ -118,7 +118,7 @@ def list_all_tenders(q: str | None = None, category: str | None = None,
             "total": total, "page": page, "page_size": page_size}
 
 
-@app.get("/api/v1/tenders/{tender_id}", response_model=TenderOut)
+@app.get("/api/v1/tenders/{tender_id:int}", response_model=TenderOut)
 def tender_detail(tender_id: int, db: Session = Depends(get_db)):
     tender = db.get(Tender, tender_id)
     if not tender or tender.verification_status != "verified":
