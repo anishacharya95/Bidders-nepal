@@ -5,14 +5,14 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.collectors.adapters import Candidate, CollectionError, collect_source, enrich_candidate
 from app.collectors.base import HttpFetcher
-from app.collectors.extraction import allowed_host
-from app.collectors.registry import register_extra_source, sync_registry
+from app.collectors.registry import register_extra_source, register_json_source, sync_registry
 from app.config import settings
 from app.models import (
     CollectionRun,
@@ -86,7 +86,7 @@ def _document_rows(
             continue
         seen.add(doc.url)
         metadata = None
-        if settings.collector_probe_documents and probe_budget[0] > 0 and allowed_host(doc.url):
+        if settings.collector_probe_documents and probe_budget[0] > 0 and fetcher.permitted(doc.url):
             probe_budget[0] -= 1
             metadata = probe_document(fetcher, doc.url)
         rows.append(
@@ -268,10 +268,20 @@ def run_collection(
             sync_registry(db)
         for extra in [item.strip() for item in settings.extra_source_urls.split(",") if item.strip()]:
             register_extra_source(db, extra)
+        for feed in [item.strip() for item in settings.json_source_urls.split(",") if item.strip()]:
+            register_json_source(db, feed)
         db.commit()
 
         sources = select_sources(db, mode, limit=limit, source_ids=source_ids)
-        fetcher = HttpFetcher()
+        feed_hosts = {
+            urlparse(source.tender_page_url).hostname or ""
+            for source in sources
+            if source.collector_key == "json_api" and source.tender_page_url
+        }
+        feed_hosts |= {
+            item.strip() for item in settings.json_source_hosts.split(",") if item.strip()
+        }
+        fetcher = HttpFetcher(extra_hosts=feed_hosts)
         detail_budget = settings.collector_detail_fetch_limit
 
         for source in sources:

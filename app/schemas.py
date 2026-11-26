@@ -195,7 +195,9 @@ class SourceCreate(BaseModel):
     municipality: str | None = None
     official_website: str | None = Field(default=None, max_length=500)
     tender_page_url: str | None = Field(default=None, max_length=1000)
-    collector_key: Literal["generic_html", "ppmo", "nea", "directory_mofaga", "manual"] = "generic_html"
+    collector_key: Literal[
+        "generic_html", "ppmo", "nea", "json_api", "directory_mofaga", "manual"
+    ] = "generic_html"
     active: bool = True
     priority: int = Field(default=3, ge=1, le=5)
     requires_authorization: bool = False
@@ -207,7 +209,9 @@ class SourceUpdate(BaseModel):
     organization_name: str | None = Field(default=None, max_length=300)
     official_website: str | None = Field(default=None, max_length=500)
     tender_page_url: str | None = Field(default=None, max_length=1000)
-    collector_key: Literal["generic_html", "ppmo", "nea", "directory_mofaga", "manual"] | None = None
+    collector_key: Literal[
+        "generic_html", "ppmo", "nea", "json_api", "directory_mofaga", "manual"
+    ] | None = None
     discovery_status: str | None = Field(default=None, max_length=40)
     active: bool | None = None
     priority: int | None = Field(default=None, ge=1, le=5)

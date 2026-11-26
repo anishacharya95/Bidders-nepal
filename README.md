@@ -209,7 +209,45 @@ Collector: `ENABLE_TENDER_COLLECTOR`, `TENDER_PRIORITY_INTERVAL_MINUTES` (or leg
 `TENDER_TIMEZONE`, `TENDER_PRIORITY_SOURCE_LIMIT`, `TENDER_FULL_SOURCE_LIMIT`,
 `TENDER_RUN_BUDGET_SECONDS`, `TENDER_MAX_PAGES_PER_SOURCE`, `TENDER_DETAIL_FETCH_LIMIT`,
 `TENDER_HTTP_TIMEOUT_SECONDS`, `TENDER_HOST_DELAY_SECONDS`, `TENDER_PROBE_DOCUMENTS`,
-`TENDER_LOCAL_DISCOVERY`, `TENDER_SOURCE_URLS`, `TENDER_USER_AGENT`.
+`TENDER_LOCAL_DISCOVERY`, `TENDER_SOURCE_URLS`, `TENDER_JSON_SOURCE_URLS`,
+`TENDER_JSON_SOURCE_HOSTS`, `TENDER_USER_AGENT`.
+
+### JSON notice feeds
+
+A feed that publishes notices as JSON is collected with the `json_api` collector. Its
+records go through the same duplicate detection, change tracking, document discovery
+and admin review as any scraped page.
+
+- `TENDER_JSON_SOURCE_URLS` — comma-separated HTTPS feed URLs. Each is registered as a
+  source (`collector_key=json_api`) on the next collection and fetched even when the
+  host is not a `.gov.np` domain, because it was configured explicitly.
+- `TENDER_JSON_SOURCE_HOSTS` — extra hostnames to permit when the feed is registered
+  through the admin dashboard instead of the environment.
+- Admin dashboard: Sources → Add source, collector `json_api`, tender page URL = feed URL.
+
+Accepted payloads are a bare list or a list under `items`, `results`, `data`, `tenders`,
+`records`, `notices` or `docs`. Fields are matched by common aliases (`title`,
+`organization_name`/`buyer`, `deadline`/`closing_date`, `source_url`/`url`, …), ISO
+and free-text dates are both parsed, nested `documents`/`attachments`/`files` become bid
+documents, and feeds that report `total` + `page_size` are followed for up to
+`TENDER_MAX_PAGES_PER_SOURCE` pages.
+
+```bash
+TENDER_JSON_SOURCE_URLS="https://bidders-nepal-api.onrender.com/api/v1/tenders/all" \
+ENABLE_TENDER_COLLECTOR=false python - <<'PY'
+from app.database import SessionLocal
+from app.collectors.registry import register_json_source
+from app.collectors.runner import run_collection
+
+db = SessionLocal()
+source = register_json_source(db, "https://bidders-nepal-api.onrender.com/api/v1/tenders/all")
+db.commit()
+print(run_collection(db, mode="source", trigger="manual", source_ids=[source.id], limit=1))
+PY
+```
+
+Pointing this platform's own `/api/v1/tenders/all` back at itself is circular — every
+notice returns as a duplicate — so use a feed published by a different service.
 
 ## Deployment
 

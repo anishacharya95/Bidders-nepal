@@ -322,6 +322,41 @@ def register_extra_source(db: Session, url: str) -> Source | None:
     return source
 
 
+def register_json_source(db: Session, url: str) -> Source | None:
+    """TENDER_JSON_SOURCE_URLS entries become explicit JSON feed sources.
+
+    The host is deliberately not checked against the government allowlist here:
+    the operator typed the feed into the deployment configuration, and the
+    collector only fetches hosts belonging to registered ``json_api`` sources.
+    """
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        log.warning("Ignoring non-HTTPS JSON feed URL %s", url)
+        return None
+    host = parsed.hostname.lower().removeprefix("www.")
+    slug = _slug(f"json-{host}-{parsed.path}")
+    existing = db.query(Source).filter(Source.slug == slug).first()
+    if existing:
+        return existing
+    source = Source(
+        slug=slug,
+        name=f"{host} JSON feed",
+        organization_name=host,
+        source_type="configured",
+        level="central",
+        official_website=f"https://{host}/",
+        tender_page_url=url,
+        collector_key="json_api",
+        discovery_status="discovered",
+        priority=2,
+        notes="External JSON notice feed added through TENDER_JSON_SOURCE_URLS.",
+    )
+    db.add(source)
+    return source
+
+
 def local_directory_counts() -> dict:
     payload = load_local_governments()
     return {

@@ -11,6 +11,7 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 
 from app.collectors.base import HttpFetcher
+from app.collectors.json_api import collect_json_source
 from app.collectors.extraction import (
     allowed_host,
     canonical_url,
@@ -359,6 +360,8 @@ def collect_source(source: Source, fetcher: HttpFetcher) -> SourceCollectionResu
         raise CollectionError("Source has no verified tender page URL")
     if source.requires_authorization:
         raise CollectionError("Source requires authorized access and must not be scraped")
+    if source.collector_key == "json_api":
+        return collect_json_source(source, fetcher)
 
     pages = [source.tender_page_url]
     if source.collector_key == "ppmo":
@@ -455,7 +458,7 @@ def enrich_candidate(candidate: Candidate, fetcher: HttpFetcher) -> Candidate:
                 )
             )
         return candidate
-    if not allowed_host(candidate.url):
+    if not fetcher.permitted(candidate.url):
         return candidate
 
     result = fetcher.get(candidate.url, retries=1)

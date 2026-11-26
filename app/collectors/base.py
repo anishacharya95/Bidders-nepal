@@ -5,6 +5,7 @@ import logging
 import time
 import urllib.robotparser
 from dataclasses import dataclass, field
+from typing import Iterable
 from urllib.parse import urlparse
 
 import requests
@@ -55,6 +56,7 @@ class HttpFetcher:
         max_bytes: int | None = None,
         host_delay: float | None = None,
         session: requests.Session | None = None,
+        extra_hosts: Iterable[str] | None = None,
     ) -> None:
         self.user_agent = user_agent or settings.user_agent
         self.timeout = timeout or settings.collector_http_timeout
@@ -62,8 +64,21 @@ class HttpFetcher:
         self.host_delay = host_delay if host_delay is not None else settings.collector_host_delay_seconds
         self.session = session or requests.Session()
         self.session.headers.update(
-            {"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.8,*/*;q=0.5"}
+            {
+                "User-Agent": self.user_agent,
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/json;q=0.9,"
+                    "application/pdf;q=0.8,*/*;q=0.5"
+                ),
+            }
         )
+        # Non-government hosts an administrator explicitly registered as JSON
+        # feeds. Everything else still has to be an approved public source.
+        self.extra_hosts = {
+            str(host).strip().lower().removeprefix("www.")
+            for host in (extra_hosts or ())
+            if host and str(host).strip()
+        }
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._last_request: dict[str, float] = {}
         self.requests_made = 0
@@ -95,6 +110,14 @@ class HttpFetcher:
         except Exception:
             return True
 
+    def permitted(self, url: str) -> bool:
+        """True for approved public sources and explicitly registered JSON feeds."""
+        if allowed_host(url):
+            return True
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower().removeprefix("www.")
+        return parsed.scheme == "https" and bool(host) and host in self.extra_hosts
+
     def _respect_delay(self, host: str) -> None:
         last = self._last_request.get(host)
         if last is not None:
@@ -106,7 +129,7 @@ class HttpFetcher:
     # -- requests -------------------------------------------------------
     def _request(self, method: str, url: str, *, retries: int = 2, check_robots: bool = True) -> FetchResult:
         started = time.monotonic()
-        if not allowed_host(url):
+        if not self.permitted(url):
             return FetchResult(url, url, 0, error="Host is not an approved public government source", skipped_reason="host_not_allowed")
         if check_robots and not self.allowed_by_robots(url):
             return FetchResult(url, url, 0, error="robots.txt disallows automated access", skipped_reason="robots_disallowed")
@@ -130,7 +153,7 @@ class HttpFetcher:
                 headers = {key.lower(): value for key, value in response.headers.items()}
                 final_url = response.url
                 if check_robots and urlparse(final_url).hostname != urlparse(url).hostname:
-                    if not allowed_host(final_url) or not self.allowed_by_robots(final_url):
+                    if not self.permitted(final_url) or not self.allowed_by_robots(final_url):
                         response.close()
                         return FetchResult(
                             url, final_url, status_code, headers=headers,
@@ -144,7 +167,10 @@ class HttpFetcher:
                     continue
 
                 text = ""
-                if method == "GET" and "html" in headers.get("content-type", "").lower():
+                content_type = headers.get("content-type", "").lower()
+                if method == "GET" and (
+                    "html" in content_type or "json" in content_type or content_type.startswith("text/")
+                ):
                     chunks: list[bytes] = []
                     size = 0
                     for chunk in response.iter_content(chunk_size=65_536):

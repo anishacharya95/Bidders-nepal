@@ -3,7 +3,7 @@
 <div class="page-head">
   <div>
     <h1>{{ 'Edit source' if source else 'Add source' }}</h1>
-    <p class="muted">Only public HTTPS government sources are fetched. Sources needing login or CAPTCHA must stay disabled.</p>
+    <p class="muted">Only public HTTPS government sources are fetched. A <code>json_api</code> collector reads a JSON notice feed (for example <code>/api/v1/tenders/all</code>) and requires the feed URL below. Sources needing login or CAPTCHA must stay disabled.</p>
   </div>
   <a class="btn ghost" href="/admin/sources">Back to sources</a>
 </div>
@@ -27,7 +27,7 @@
   <label>Collector
     {% set collector = source.collector_key if source else 'generic_html' %}
     <select name="collector_key">
-      {% for item in ['generic_html','ppmo','nea','manual'] %}
+      {% for item in ['generic_html','ppmo','nea','json_api','manual'] %}
       <option value="{{ item }}" {% if item == collector %}selected{% endif %}>{{ item }}</option>
       {% endfor %}
     </select>

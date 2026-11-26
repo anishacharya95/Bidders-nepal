@@ -72,6 +72,11 @@ class Settings:
     local_discovery_batch = _int("TENDER_LOCAL_DISCOVERY_BATCH", 8, 1)
 
     extra_source_urls = os.getenv("TENDER_SOURCE_URLS", "")
+    # JSON notice feeds, e.g. https://bidders-nepal-api.onrender.com/api/v1/tenders/all
+    # Each entry is registered as a `json_api` source and fetched even when it
+    # is not a .gov.np host, because an operator configured it explicitly.
+    json_source_urls = os.getenv("TENDER_JSON_SOURCE_URLS", "")
+    json_source_hosts = os.getenv("TENDER_JSON_SOURCE_HOSTS", "")
     user_agent = os.getenv(
         "TENDER_USER_AGENT",
         "BiddersNepalBot/2.0 (+https://bidders-nepal-api.onrender.com; public notice discovery; contact: admin@biddersnepal.app)",
