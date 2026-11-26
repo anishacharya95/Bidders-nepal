@@ -33,7 +33,7 @@ def start_scheduler():
     interval = max(60, int(os.getenv("TENDER_COLLECT_INTERVAL_MINUTES", "360")))
     _scheduler = BackgroundScheduler(timezone="Asia/Kathmandu", daemon=True)
     _scheduler.add_job(_run_collection, "interval", minutes=interval,
-                       id="ppmo-public-notice-discovery", max_instances=1,
+                       id="official-public-tender-discovery", max_instances=1,
                        coalesce=True, replace_existing=True)
     _scheduler.start()
     log.info("Tender collector scheduler started; interval=%s minutes", interval)
