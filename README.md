@@ -8,6 +8,9 @@ FastAPI backend starter for a Nepal tender and bidding-notice aggregator.
 - Admin JWT login; passwords hashed with Argon2
 - Admin tender creation and editing
 - Duplicate notice-number check
+- Conservative PPMO public-link discovery; candidates remain pending
+- Basic deadline and category extraction where the page text is unambiguous
+- Automated tests for collector URL safety and parsing
 - CSV bulk import (new records remain pending verification)
 - Admin verification/rejection workflow and audit history
 - SQLite for local testing; PostgreSQL configuration for deployment
@@ -63,8 +66,8 @@ source_name, source_url, document_url. Use ISO 8601 dates and Nepal offset, e.g.
 
 ## Official-source integrations
 Potential source portals include Nepal e-GP (https://bolpatra.gov.np/) and PPMO
-(https://ppmo.gov.np/). Automated collectors are **not enabled in this starter**.
-Each portal needs a separately reviewed adapter after confirming permitted access,
+(https://ppmo.gov.np/). The PPMO public-page discovery adapter is enabled by default and is intentionally limited.
+Each additional portal needs a separately reviewed adapter after confirming permitted access,
 terms, formats and request frequency. Do not bypass logins, CAPTCHAs or access controls.
 The platform should preserve the original notice URL and show the source and verification status.
 
@@ -88,12 +91,14 @@ Free hosting can sleep when idle and free database limits/retention may change. 
 
 ## Automated PPMO public notice discovery
 
-The first collector checks public PPMO pages every six hours by default. It extracts
-notice-like links from public HTML and stores new candidates as **pending**. Nothing
-is published automatically. The adapter only requests HTTPS pages on ppmo.gov.np
-and rejects redirects outside that host. It does not sign in, submit forms, bypass
-CAPTCHAs, call private APIs, or download protected documents. Page layouts can change,
-so admins must review each source link and complete missing tender details.
+The first collector checks configured public PPMO pages every six hours by default. It extracts
+notice-like links from public HTML and stores new candidates as **pending**. It attempts
+basic category, notice-number and deadline extraction only when the visible page text is
+unambiguous. It does not infer the procuring entity: the organization is explicitly marked
+as requiring admin review. Nothing is published automatically. The adapter only requests
+HTTPS pages on ppmo.gov.np and rejects redirects outside that host. It does not sign in,
+submit forms, bypass CAPTCHAs, call private APIs, or download protected documents. Page
+layouts can change, so admins must review each source link and complete missing details.
 
 This first release does not scrape the e-GP bidder portal. Add separate adapters only
 after confirming the source's published access rules, permission and a stable public
