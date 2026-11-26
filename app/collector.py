@@ -141,7 +141,7 @@ def collect_public_notices(db: Session) -> dict:
                 if notice and db.query(Tender).filter(Tender.notice_number == notice).first():
                     duplicates += 1
                     continue
-                deadline = _deadline(context)
+                deadline = _deadline(anchor_text)
                 db.add(Tender(
                     title=anchor_text[:500],
                     organization_name="Not identified - admin review required",
