@@ -87,7 +87,10 @@ def _is_download_resource(url: str, key_hint: str = "") -> bool:
     key = re.sub(r"[^a-z]", "", key_hint.lower())
     if is_direct_file(url):
         return True
-    if key in {re.sub(r"[^a-z]", "", item.lower()) for item in DOWNLOAD_KEYS}:
+    if (
+        key in {re.sub(r"[^a-z]", "", item.lower()) for item in DOWNLOAD_KEYS}
+        or any(token in key for token in ("download", "document", "attachment", "file"))
+    ):
         return True
     if any(hint in path for hint in DOWNLOAD_PATH_HINTS):
         query = parse_qs(parsed.query)
