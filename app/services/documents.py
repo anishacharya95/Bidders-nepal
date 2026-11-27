@@ -2,30 +2,21 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse, parse_qs
 
 from bs4 import BeautifulSoup, Tag
 
 from app.collectors.extraction import allowed_host, canonical_url
 
 DIRECT_FILE_FORMATS = {
-    "pdf": "PDF",
-    "doc": "DOC",
-    "docx": "DOCX",
-    "xls": "XLS",
-    "xlsx": "XLSX",
-    "zip": "ZIP",
-    "rar": "RAR",
-    "7z": "7Z",
-    "csv": "CSV",
-    "txt": "TXT",
-    "dwg": "DWG",
-    "jpg": "JPG",
-    "jpeg": "JPG",
-    "png": "PNG",
+    "pdf": "PDF", "doc": "DOC", "docx": "DOCX", "xls": "XLS",
+    "xlsx": "XLSX", "zip": "ZIP", "rar": "RAR", "7z": "7Z",
+    "csv": "CSV", "txt": "TXT", "dwg": "DWG", "jpg": "JPG",
+    "jpeg": "JPG", "png": "PNG",
 }
 
 DOCUMENT_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -41,6 +32,15 @@ DOCUMENT_KINDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("bid_document", ("bid document", "bidding document", "tender document", "bid doc", "बोलपत्र")),
     ("notice", ("notice", "advertisement", "सूचना")),
 )
+
+DOWNLOAD_KEYS = {
+    "documenturl", "document_url", "attachmenturl", "attachment_url",
+    "downloadurl", "download_url", "fileurl", "file_url", "filepath",
+    "file_path", "documentpath", "document_path", "attachmentpath",
+    "attachment_path", "downloadpath", "download_path",
+}
+DOWNLOAD_PATH_HINTS = ("/download", "/attachment", "/attachments", "/document",
+                       "/documents", "/file", "/files", "/media/")
 
 
 @dataclass
@@ -60,17 +60,39 @@ class DocumentProbe:
     http_status: int | None = None
 
 
+def _extension(value: str) -> str | None:
+    parsed = urlparse(value)
+    candidates = [parsed.path]
+    query = parse_qs(parsed.query)
+    for key in ("filename", "fileName", "file", "name", "document"):
+        candidates.extend(query.get(key, []))
+    for candidate in candidates:
+        match = re.search(r"\.([a-z0-9]{2,5})(?:$|[?#])", unquote(candidate).lower())
+        if match and match.group(1) in DIRECT_FILE_FORMATS:
+            return DIRECT_FILE_FORMATS[match.group(1)]
+    return None
+
+
 def file_format(url: str) -> str | None:
-    path = urlparse(url).path.lower()
-    match = re.search(r"\.([a-z0-9]{2,5})$", path)
-    if not match:
-        return None
-    extension = match.group(1)
-    return DIRECT_FILE_FORMATS.get(extension, extension.upper())
+    return _extension(url)
 
 
 def is_direct_file(url: str) -> bool:
     return file_format(url) is not None
+
+
+def _is_download_resource(url: str, key_hint: str = "") -> bool:
+    parsed = urlparse(url)
+    path = parsed.path.lower()
+    key = re.sub(r"[^a-z]", "", key_hint.lower())
+    if is_direct_file(url):
+        return True
+    if key in {re.sub(r"[^a-z]", "", item.lower()) for item in DOWNLOAD_KEYS}:
+        return True
+    if any(hint in path for hint in DOWNLOAD_PATH_HINTS):
+        query = parse_qs(parsed.query)
+        return bool(query) or path.rstrip("/").endswith(("download", "file", "document", "attachment"))
+    return False
 
 
 def classify_document(label: str, url: str) -> str:
@@ -81,49 +103,92 @@ def classify_document(label: str, url: str) -> str:
     return "attachment"
 
 
+def _safe_document_url(value: str, page_url: str, key_hint: str = "") -> str | None:
+    candidate = value.strip().replace("\\/", "/")
+    if not candidate or candidate.startswith(("data:", "blob:", "javascript:", "mailto:")):
+        return None
+    target = canonical_url(urljoin(page_url, candidate))
+    if not target.startswith("https://") or not allowed_host(target):
+        return None
+    if not _is_download_resource(target, key_hint):
+        return None
+    return target
+
+
 def documents_from_soup(
     soup: BeautifulSoup | Tag,
     page_url: str,
     *,
     source_url: str | None = None,
 ) -> list[DiscoveredDocument]:
-    """Extract only direct public file links; restricted portal links are skipped."""
+    """Find direct public attachments in HTML links, data attributes and embedded JSON.
+
+    The parser deliberately does not guess private API endpoints or turn arbitrary
+    project links into documents. It only accepts URLs that look like files or
+    explicit download/document/attachment resources on an approved public host.
+    """
     found: dict[str, DiscoveredDocument] = {}
-    for anchor in soup.select("a[href]"):
-        href = (anchor.get("href") or "").strip()
-        if not href or href.startswith(("javascript:", "mailto:", "tel:")):
-            continue
-        target = canonical_url(urljoin(page_url, href))
-        if not target.startswith("https://"):
-            continue
-        if not is_direct_file(target):
-            continue
-        if not allowed_host(target):
-            # Documents are frequently mirrored on the same approved government
-            # host only; unknown CDNs are not claimed as downloadable.
-            continue
-        label = " ".join(anchor.get_text(" ", strip=True).split())
-        if not label:
-            label = unquote(urlparse(target).path.rsplit("/", 1)[-1]) or "Document"
-        existing = found.get(target)
-        if existing and len(existing.label) >= len(label):
-            continue
+
+    def add(value: str, label: str = "", key_hint: str = "") -> None:
+        target = _safe_document_url(value, page_url, key_hint)
+        if not target:
+            return
+        clean_label = " ".join((label or "").split())
+        if not clean_label:
+            clean_label = unquote(urlparse(target).path.rsplit("/", 1)[-1]) or "Document"
+        current = found.get(target)
+        if current and len(current.label) >= len(clean_label):
+            return
         found[target] = DiscoveredDocument(
             url=target,
-            label=label[:500],
-            document_type=classify_document(label, target),
+            label=clean_label[:500],
+            document_type=classify_document(clean_label, target),
             file_format=file_format(target),
         )
+
+    # Ordinary anchor links and common data attributes used by modern portals.
+    for anchor in soup.select("a[href], [data-href], [data-url], [data-download-url], [data-file-url]"):
+        label = " ".join(anchor.get_text(" ", strip=True).split())
+        for attr in ("href", "data-href", "data-url", "data-download-url", "data-file-url"):
+            value = anchor.get(attr)
+            if value:
+                add(str(value), label, attr)
+
+    # Some portals render attachment metadata into JSON rather than anchors.
+    # Read only embedded public page data; never manufacture or call API routes.
+    scripts = soup.select('script[type="application/json"], script[type="application/ld+json"], script#__NEXT_DATA__')
+    for script in scripts[:30]:
+        raw = script.string or script.get_text()
+        if not raw or len(raw) > 2_000_000:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+
+        def walk(value, parent_key: str = "", inherited_label: str = "") -> None:
+            if isinstance(value, dict):
+                label = next(
+                    (str(value[k]) for k in ("label", "title", "name", "fileName", "filename")
+                     if isinstance(value.get(k), (str, int)) and str(value[k]).strip()),
+                    inherited_label,
+                )
+                for key, child in value.items():
+                    walk(child, str(key), label)
+            elif isinstance(value, list):
+                for child in value:
+                    walk(child, parent_key, inherited_label)
+            elif isinstance(value, str):
+                if parent_key.lower() in DOWNLOAD_KEYS or _is_download_resource(value, parent_key):
+                    add(value, inherited_label, parent_key)
+
+        walk(payload)
+
     return list(found.values())
 
 
 def document_url_fingerprint(url: str) -> str:
-    """Stable fingerprint used to de-duplicate document rows for one tender.
-
-    When a document is mirrored the file's own SHA-256 is stored in the same
-    column; for link-only documents this URL fingerprint prevents the collector
-    from inserting the same attachment twice.
-    """
+    """Stable fingerprint used to de-duplicate document rows for one tender."""
     digest = hashlib.sha256(canonical_url(url).encode("utf-8")).hexdigest()
     return digest
 
@@ -136,15 +201,12 @@ def probe_document(fetcher, url: str) -> DocumentProbe:
         result = fetcher.head(url)
     except Exception:
         return DocumentProbe(status="failed")
-
     if result is None:
         return DocumentProbe(status="failed")
-
     content_type = (result.headers or {}).get("content-type", "").split(";")[0].strip() or None
     length = (result.headers or {}).get("content-length")
     size = int(length) if length and length.isdigit() else None
     status_code = result.status_code
-
     if status_code and 200 <= status_code < 400:
         status = "available"
     elif status_code in {401, 403}:
@@ -153,7 +215,6 @@ def probe_document(fetcher, url: str) -> DocumentProbe:
         status = "missing"
     else:
         status = "failed"
-
     return DocumentProbe(
         content_type=content_type,
         size_bytes=size,
@@ -164,5 +225,4 @@ def probe_document(fetcher, url: str) -> DocumentProbe:
 
 def document_published_date(text: str) -> datetime | None:
     from app.collectors.extraction import parse_deadline
-
     return parse_deadline(text)
