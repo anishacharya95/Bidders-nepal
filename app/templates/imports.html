@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Excel / CSV tender import</h1>
+    <p class="muted">Upload a government tender spreadsheet from your phone or computer.</p>
+  </div>
+</div>
+<section class="card" style="max-width:820px">
+  <h2>Upload spreadsheet</h2>
+  <p class="muted">Supported formats: .xlsx and .csv · Maximum file size: 10 MB · Maximum 10,000 rows.</p>
+  <form method="post" action="/admin/imports" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="tender-file"><strong>Select Excel or CSV file</strong></label>
+    <input id="tender-file" name="file" type="file" accept=".xlsx,.csv" required style="display:block;margin:12px 0 20px">
+    <button class="btn primary" type="submit">Upload and import tenders</button>
+  </form>
+</section>
+<section class="card" style="max-width:820px;margin-top:18px">
+  <h2>Recognized columns</h2>
+  <p>The importer recognizes common variations of these fields:</p>
+  <ul class="facts">
+    <li><span>Required</span><strong>Tender title · Organization / Procuring Entity</strong></li>
+    <li><span>Notice identification</span><strong>Notice number / IFB number / Reference number</strong></li>
+    <li><span>Dates</span><strong>Published date · Submission deadline · Bid opening date</strong></li>
+    <li><span>Location</span><strong>Province · District · Municipality</strong></li>
+    <li><span>Details</span><strong>Category · Description · Budget · Bid security</strong></li>
+    <li><span>Links</span><strong>Source URL · Bid document URL</strong></li>
+  </ul>
+  <p class="hint">Duplicate notices are detected by notice number, source URL, or matching title and organization. Existing records are not overwritten; only missing details may be filled. New imports remain pending admin verification and are not automatically marked verified.</p>
+</section>
+{% endblock %}
