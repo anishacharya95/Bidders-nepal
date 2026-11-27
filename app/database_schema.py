@@ -111,6 +111,45 @@ def _apply(connection, bind) -> None:
         except Exception:  # index creation must never block startup
             log.warning("Could not create index %s", index_name, exc_info=True)
 
+    # Older imports stored a single attachment URL on the tender row before the
+    # normalized tender_documents table existed. Promote those links once, without
+    # duplicating documents already discovered by the collector.
+    if {"tenders", "tender_documents"}.issubset(existing_tables):
+        connection.execute(
+            text(
+                """
+                INSERT INTO tender_documents (
+                    tender_id, label, url, document_type, source_url, file_format,
+                    download_status, is_public, discovered_at, checked_count
+                )
+                SELECT
+                    t.id,
+                    'Bid document',
+                    t.document_url,
+                    'bid_document',
+                    t.source_url,
+                    CASE
+                        WHEN lower(t.document_url) LIKE '%.pdf%' THEN 'PDF'
+                        WHEN lower(t.document_url) LIKE '%.docx%' THEN 'DOCX'
+                        WHEN lower(t.document_url) LIKE '%.doc%' THEN 'DOC'
+                        WHEN lower(t.document_url) LIKE '%.xlsx%' THEN 'XLSX'
+                        WHEN lower(t.document_url) LIKE '%.xls%' THEN 'XLS'
+                        WHEN lower(t.document_url) LIKE '%.zip%' THEN 'ZIP'
+                        ELSE NULL
+                    END,
+                    'unverified', TRUE, CURRENT_TIMESTAMP, 0
+                FROM tenders AS t
+                WHERE t.document_url IS NOT NULL
+                  AND trim(t.document_url) <> ''
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM tender_documents AS d
+                      WHERE d.tender_id = t.id AND d.url = t.document_url
+                  )
+                """
+            )
+        )
+
 
 def ensure_schema(bind: Engine | Connection) -> None:
     Base.metadata.create_all(bind=bind)
