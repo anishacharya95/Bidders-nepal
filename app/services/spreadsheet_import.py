@@ -16,15 +16,15 @@ from app.services.classification import apply_classification
 
 MAX_ROWS = 10000
 ALIASES = {
-    "title": {"title", "tender title", "notice title", "project title", "project / public entity", "project/public entity", "project name", "project work title", "project/work title", "name of project", "work name", "procurement title", "description of procurement"},
-    "organization_name": {"organization_name", "organization", "organization name", "organization / procuring entity", "organization/procuring entity", "procuring entity", "procuring entity name", "procuring public entity", "public entity", "public entity name", "procuring agency", "purchaser", "employer", "office", "agency", "buyer", "location"},
+    "title": {"title", "tender title", "notice title", "project title", "project / public entity", "project/public entity", "project public entity", "project name", "project work title", "project/work title", "name of project", "work name", "procurement title", "description of procurement"},
+    "organization_name": {"organization_name", "organization", "organization name", "organization / procuring entity", "organization/procuring entity", "procuring entity", "procuring entity name", "procuring public entity", "public entity", "public entity name", "procuring agency", "purchaser", "employer", "office", "agency", "buyer", "location", "procuring location"},
     "notice_number": {"notice_number", "notice no", "notice number", "ifb no", "ifb number", "ifb/reoi/eoi/pq no", "bid number", "contract no", "contract number", "reference no", "reference number"},
     "category": {"category", "procurement category", "type"},
     "province": {"province", "state"},
     "district": {"district"},
     "municipality": {"municipality", "local level", "local government"},
     "description": {"description", "details", "scope"},
-    "published_date": {"published date", "publication date", "date published", "publish date"},
+    "published_date": {"published date", "publication date", "date published", "publish date", "text xs"},
     "deadline": {"deadline", "submission deadline", "last date", "closing date", "bid submission deadline"},
     "bid_opening_date": {"bid opening date", "opening date"},
     "estimated_budget_npr": {"estimated budget", "estimated amount", "cost estimate", "estimated cost", "budget npr"},
@@ -124,6 +124,12 @@ def import_tender_rows(db: Session, admin: User, rows: list[dict]) -> dict:
         row_number = item.get("_row", "?")
         title = str(item.get("title") or "").strip()
         organization = str(item.get("organization_name") or "").strip()
+        # Bolpatra export has a combined procuring-entity/location column.
+        # Keep its full value and infer district only from a final comma segment.
+        if not item.get("district") and organization:
+            location_parts = [part.strip() for part in organization.split(",") if part.strip()]
+            if len(location_parts) >= 3:
+                item["district"] = location_parts[-1]
         if len(title) < 5 or len(organization) < 2:
             skipped += 1
             errors.append({"row": row_number, "reason": "Missing or invalid title/organization"})
