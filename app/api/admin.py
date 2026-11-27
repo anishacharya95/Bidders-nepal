@@ -35,6 +35,7 @@ from app.services.monitoring import platform_stats
 from app.services.duplicates import search_duplicate_groups
 from app.services.monitoring import coverage_stats
 from app.services.classification import apply_classification
+from app.services.spreadsheet_import import import_tender_rows, parse_spreadsheet
 
 router = APIRouter(
     prefix="/api/v1/admin",
@@ -208,6 +209,32 @@ async def import_csv(
     except (UnicodeDecodeError, csv.Error, ValueError) as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=f"Invalid CSV: {exc}")
+
+
+
+@router.post("/import-spreadsheet")
+async def import_spreadsheet(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """Import .xlsx or .csv tender rows; records remain pending verification."""
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".csv")):
+        raise HTTPException(status_code=400, detail="Upload an .xlsx or .csv file")
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Spreadsheet must be 10 MB or smaller")
+    try:
+        rows = parse_spreadsheet(raw, filename)
+        if not rows:
+            raise ValueError("No tender rows found in the spreadsheet.")
+        return import_tender_rows(db, admin, rows)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Could not import spreadsheet: {str(exc)[:300]}")
 
 
 @router.get("/sources")
