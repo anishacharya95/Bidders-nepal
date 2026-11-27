@@ -24,7 +24,7 @@ ALIASES = {
     "district": {"district"},
     "municipality": {"municipality", "local level", "local government"},
     "description": {"description", "details", "scope"},
-    "published_date": {"published date", "publication date", "date published", "publish date", "text xs"},
+    "published_date": {"published date", "published date bs", "publication date", "date published", "publish date", "text xs"},
     "deadline": {"deadline", "submission deadline", "last date", "closing date", "bid submission deadline"},
     "bid_opening_date": {"bid opening date", "opening date"},
     "estimated_budget_npr": {"estimated budget", "estimated amount", "cost estimate", "estimated cost", "budget npr"},
@@ -66,7 +66,7 @@ def _cell_date(value: Any) -> datetime | None:
             return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
-    raise ValueError(f"Unrecognized date: {raw}")
+    # Keep importing the tender when a portal date is displayed only in Bikram Sambat text.\n    # Unparseable date text is left blank rather than rejecting the entire row.\n    return None
 
 def _number(value: Any) -> float | None:
     if value in (None, ""):
