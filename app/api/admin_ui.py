@@ -4,7 +4,7 @@ from __future__ import annotations
 import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
@@ -35,6 +35,7 @@ from app.security import (
 )
 from app.services.duplicates import search_duplicate_groups
 from app.services.monitoring import coverage_stats, platform_stats
+from app.services.spreadsheet_import import import_tender_rows, parse_spreadsheet
 
 router = APIRouter(prefix="/admin", tags=["admin-dashboard"], include_in_schema=False)
 templates = Jinja2Templates(directory="app/templates")
@@ -168,6 +169,42 @@ def dashboard(
         recent_tenders=recent_tenders,
         scheduler=scheduler_snapshot(),
     )
+
+
+
+@router.get("/imports", response_class=HTMLResponse)
+def imports_page(
+    request: Request,
+    admin: User = Depends(require_admin),
+):
+    return _render(request, "imports.html", title="Excel imports", admin=admin)
+
+
+@router.post("/imports")
+async def import_spreadsheet_ui(
+    request: Request,
+    file: UploadFile = File(...),
+    csrf_token: str = Form(...),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    _check_csrf(request, csrf_token)
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".csv")):
+        return _redirect(error="Please upload an .xlsx or .csv file", path="/admin/imports")
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        return _redirect(error="Spreadsheet must be 10 MB or smaller", path="/admin/imports")
+    try:
+        rows = parse_spreadsheet(raw, filename)
+        if not rows:
+            return _redirect(error="No tender rows found in this spreadsheet", path="/admin/imports")
+        result = import_tender_rows(db, admin, rows)
+        summary = f"Import complete: {result['added']} added, {result['updated']} updated, {result['skipped']} skipped"
+        return _redirect(summary, "/admin/imports")
+    except Exception as exc:
+        db.rollback()
+        return _redirect(error=f"Import failed: {str(exc)[:180]}", path="/admin/imports")
 
 
 @router.get("/sources", response_class=HTMLResponse)
