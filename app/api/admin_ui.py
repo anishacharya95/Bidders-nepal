@@ -183,29 +183,57 @@ def imports_page(
 @router.post("/imports")
 async def import_spreadsheet_ui(
     request: Request,
-    file: UploadFile = File(...),
+    files: list[UploadFile] = File(...),
     csrf_token: str = Form(...),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
     _check_csrf(request, csrf_token)
-    filename = (file.filename or "").lower()
-    if not filename.endswith((".xlsx", ".csv")):
-        return _redirect(error="Please upload an .xlsx or .csv file", path="/admin/imports")
-    raw = await file.read()
-    if len(raw) > 10 * 1024 * 1024:
-        return _redirect(error="Spreadsheet must be 10 MB or smaller", path="/admin/imports")
-    try:
-        rows = parse_spreadsheet(raw, filename)
-        if not rows:
-            return _redirect(error="No tender rows found in this spreadsheet", path="/admin/imports")
-        result = import_tender_rows(db, admin, rows)
-        summary = f"Import complete: {result['added']} added, {result['updated']} updated, {result['skipped']} skipped"
-        return _redirect(summary, "/admin/imports")
-    except Exception as exc:
-        db.rollback()
-        return _redirect(error=f"Import failed: {str(exc)[:180]}", path="/admin/imports")
+    if not files:
+        return _redirect(error="Choose at least one .xlsx or .csv file", path="/admin/imports")
+    if len(files) > 200:
+        return _redirect(error="You can upload up to 200 files at once", path="/admin/imports")
 
+    total_bytes = 0
+    totals = {"added": 0, "updated": 0, "skipped": 0}
+    failures = []
+    successful_files = 0
+    for upload in files:
+        filename = (upload.filename or "").strip()
+        if not filename.lower().endswith((".xlsx", ".csv")):
+            failures.append(f"{filename or 'Unnamed file'}: unsupported format")
+            continue
+        raw = await upload.read()
+        total_bytes += len(raw)
+        if len(raw) > 10 * 1024 * 1024:
+            failures.append(f"{filename}: over 10 MB")
+            continue
+        if total_bytes > 50 * 1024 * 1024:
+            failures.append("Combined upload exceeds 50 MB; remaining files were not processed")
+            break
+        try:
+            rows = parse_spreadsheet(raw, filename)
+            if not rows:
+                failures.append(f"{filename}: no tender rows found")
+                continue
+            result = import_tender_rows(db, admin, rows)
+            for key in totals:
+                totals[key] += result.get(key, 0)
+            successful_files += 1
+        except Exception as exc:
+            db.rollback()
+            failures.append(f"{filename}: {str(exc)[:120]}")
+
+    if successful_files == 0:
+        detail = "; ".join(failures[:3]) or "No valid spreadsheet files were processed"
+        return _redirect(error=detail[:250], path="/admin/imports")
+    summary = (
+        f"Bulk import finished ({successful_files}/{len(files)} files): "
+        f"{totals['added']} added, {totals['updated']} updated, {totals['skipped']} skipped"
+    )
+    if failures:
+        summary += f"; {len(failures)} file(s) had errors"
+    return _redirect(summary, "/admin/imports")
 
 @router.get("/sources", response_class=HTMLResponse)
 def sources_page(
