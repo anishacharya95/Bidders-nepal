@@ -8,12 +8,23 @@
 </div>
 <section class="card" style="max-width:820px">
   <h2>Upload spreadsheet</h2>
-  <p class="muted">Supported formats: .xlsx and .csv · Maximum file size: 10 MB · Maximum 10,000 rows.</p>
+  <p class="muted">Select up to 200 .xlsx or .csv files at once. Maximum 10 MB per file and 50 MB total · Maximum 10,000 rows per file.</p>
   <form method="post" action="/admin/imports" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label for="tender-file"><strong>Select Excel or CSV file</strong></label>
-    <input id="tender-file" name="file" type="file" accept=".xlsx,.csv" required style="display:block;margin:12px 0 20px">
-    <button class="btn primary" type="submit">Upload and import tenders</button>
+    <label for="tender-files"><strong>Select Excel or CSV files</strong></label>
+    <input id="tender-files" name="files" type="file" accept=".xlsx,.csv" multiple required style="display:block;margin:12px 0 10px">
+    <p class="hint">In the phone file picker, choose “Select all” (or long-press a file, then select the remaining files) to add all 103 files together.</p>
+    <p id="selected-files" class="muted" aria-live="polite">No files selected.</p>
+    <button class="btn primary" type="submit">Upload and import selected files</button>
+    <script>
+      const picker = document.getElementById("tender-files");
+      const summary = document.getElementById("selected-files");
+      picker.addEventListener("change", () => {
+        const files = Array.from(picker.files || []);
+        const total = files.reduce((sum, file) => sum + file.size, 0);
+        summary.textContent = files.length + " file(s) selected · " + (total / (1024 * 1024)).toFixed(1) + " MB total";
+      });
+    </script>
   </form>
 </section>
 <section class="card" style="max-width:820px;margin-top:18px">
