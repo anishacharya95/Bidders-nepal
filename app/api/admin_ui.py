@@ -627,6 +627,34 @@ def review_page(
     )
 
 
+@router.post("/tenders/approve-all")
+def approve_all_pending_ui(
+    request: Request,
+    csrf_token: str = Form(...),
+    confirm: str = Form(""),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    _check_csrf(request, csrf_token)
+    if confirm != "APPROVE_ALL_PENDING":
+        return _redirect(error="Bulk approval was not confirmed", path="/admin/review")
+    pending = db.query(Tender).filter(Tender.verification_status == "pending")
+    count = pending.count()
+    if count == 0:
+        return _redirect("There are no pending tenders to approve", "/admin/review")
+    pending.update(
+        {Tender.verification_status: "verified"},
+        synchronize_session=False,
+    )
+    db.add(AuditLog(
+        actor_user_id=admin.id,
+        action="bulk_verify_ui",
+        details=f"Approved all {count} tenders that were pending at the time of this action.",
+    ))
+    db.commit()
+    return _redirect(f"Approved {count} pending tenders", "/admin/review")
+
+
 @router.post("/tenders/{tender_id}/verify")
 def verify_ui(
     tender_id: int,
