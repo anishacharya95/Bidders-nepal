@@ -317,7 +317,14 @@ def run_collection(
                 scan.http_status = result.http_status
                 scan.duration_ms = result.duration_ms
 
-                for candidate in result.candidates:
+                # Rotate through the listing on each run. This lets the bounded detail-page
+                # enrichment budget make progress instead of retrying the same first notices.
+                candidates = result.candidates
+                if len(candidates) > 1:
+                    offset = (run.id - 1) % len(candidates)
+                    candidates = candidates[offset:] + candidates[:offset]
+
+                for candidate in candidates:
                     totals["candidates_found"] += 1
                     source_notices += 1
                     duplicate = find_duplicate(
@@ -343,13 +350,27 @@ def run_collection(
                                     source_url=candidate.url,
                                 )
                             )
-                        elif candidate.documents:
-                            # Probe a small budget here too: duplicate sources used to
-                            # store every attachment as "unverified", so real reachable
-                            # bid documents were reported as unconfirmed.
+
+                        # Existing tenders were previously skipped before detail-page
+                        # enrichment. As a result, repeat scans found duplicates but never
+                        # discovered the attachments published on their notice pages.
+                        if not candidate.documents and detail_budget > 0 and candidate.url:
+                            detail_budget -= 1
+                            try:
+                                candidate = enrich_candidate(candidate, fetcher)
+                            except Exception:
+                                log.warning(
+                                    "Duplicate detail enrichment failed for %s",
+                                    candidate.url,
+                                    exc_info=True,
+                                )
+
+                        # Merge attachments whether this is the original source URL or
+                        # another public source reporting the same tender.
+                        if candidate.documents:
                             docs = _document_rows(
                                 candidate.documents,
-                                existing.source_url or candidate.url,
+                                candidate.url or existing.source_url or source.tender_page_url,
                                 fetcher,
                                 [max(1, min(6, settings.collector_detail_fetch_limit))],
                             )
