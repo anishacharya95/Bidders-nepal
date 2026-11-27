@@ -156,7 +156,7 @@ def _search(
             "categories": value_counts(db, Tender.category, params),
             "procurement_types": value_counts(db, Tender.procurement_type, params),
             "provinces": value_counts(db, Tender.province, params),
-            "districts": value_counts(db, Tender.district, params, limit=40),
+            "districts": value_counts(db, Tender.district, params, limit=1000),
         }
     if response is not None:
         response.headers.update(CACHE_HEADER)
@@ -506,7 +506,7 @@ def provinces(
     db: Session = Depends(get_db),
 ):
     params = _filters(verification_status=verification_status)
-    return {"items": value_counts(db, Tender.province, params)}
+    return {"items": value_counts(db, Tender.province, params, limit=1000)}
 
 
 @router.get("/districts")
@@ -516,7 +516,7 @@ def districts(
     db: Session = Depends(get_db),
 ):
     params = _filters(province=province, verification_status=verification_status)
-    return {"items": value_counts(db, Tender.district, params)}
+    return {"items": value_counts(db, Tender.district, params, limit=1000)}
 
 
 @router.get("/municipalities")
@@ -686,8 +686,15 @@ def recent_changes(
 
 
 @router.get("/filters/options")
-def filter_options(response: Response, db: Session = Depends(get_db)):
-    """One call that returns every filter menu used by clients."""
+def filter_options(
+    response: Response,
+    province: str | None = None,
+    district: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Return complete filter menus; district options can be narrowed by province."""
+    params = _filters(province=province, district=district)
+
     def build() -> dict:
         document_totals = dict(
             db.query(TenderDocument.download_status, func.count(TenderDocument.id))
@@ -695,15 +702,15 @@ def filter_options(response: Response, db: Session = Depends(get_db)):
             .all()
         )
         return {
-            "categories": value_counts(db, Tender.category),
-            "procurement_types": value_counts(db, Tender.procurement_type),
-            "provinces": value_counts(db, Tender.province),
-            "districts": value_counts(db, Tender.district),
-            "municipalities": value_counts(db, Tender.municipality, limit=60),
-            "organizations": value_counts(db, Tender.organization_name, limit=60),
-            "ministries": value_counts(db, Tender.ministry, limit=60),
-            "departments": value_counts(db, Tender.department, limit=60),
-            "sources": value_counts(db, Tender.source_name, limit=60),
+            "categories": value_counts(db, Tender.category, params, limit=1000),
+            "procurement_types": value_counts(db, Tender.procurement_type, params, limit=1000),
+            "provinces": value_counts(db, Tender.province, params, limit=1000),
+            "districts": value_counts(db, Tender.district, params, limit=1000),
+            "municipalities": value_counts(db, Tender.municipality, params, limit=1000),
+            "organizations": value_counts(db, Tender.organization_name, params, limit=1000),
+            "ministries": value_counts(db, Tender.ministry, params, limit=1000),
+            "departments": value_counts(db, Tender.department, params, limit=1000),
+            "sources": value_counts(db, Tender.source_name, params, limit=1000),
             "statuses": [
                 {"value": value, "count": count}
                 for value, count in db.query(Tender.status, func.count(Tender.id))
@@ -722,6 +729,7 @@ def filter_options(response: Response, db: Session = Depends(get_db)):
             ],
             "canonical_procurement_types": list(PROCUREMENT_TYPES),
             "sort_options": ["newest", "closing", "oldest", "organization"],
+            "applied_location_filters": {"province": province, "district": district},
         }
 
     response.headers.update(CACHE_HEADER)
