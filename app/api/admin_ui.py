@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -178,6 +178,45 @@ def imports_page(
     admin: User = Depends(require_admin),
 ):
     return _render(request, "imports.html", title="Excel imports", admin=admin)
+
+
+@router.post("/imports/rollback-20261127")
+def rollback_nov27_import(
+    request: Request,
+    csrf_token: str = Form(...),
+    confirm: str = Form(""),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    _check_csrf(request, csrf_token)
+    if confirm != "REMOVE_2014_IMPORTED_TENDERS":
+        return _redirect(error="Please confirm the exact import rollback", path="/admin/imports")
+    # One-time rollback scope: only new Excel/CSV records created by the Nov 27 upload.
+    start = datetime(2026, 11, 27, 7, 50, 0, tzinfo=timezone.utc)
+    end = datetime(2026, 11, 27, 7, 55, 0, tzinfo=timezone.utc)
+    query = db.query(Tender).filter(
+        Tender.created_by == admin.id,
+        Tender.source_name == "Excel/CSV import",
+        Tender.created_at >= start,
+        Tender.created_at < end,
+    )
+    count = query.count()
+    if count != 2014:
+        return _redirect(
+            error=f"Rollback stopped safely: expected 2,014 matching new imports but found {count}. No records were deleted.",
+            path="/admin/imports",
+        )
+    query.delete(synchronize_session=False)
+    db.add(AuditLog(
+        actor_user_id=admin.id,
+        action="spreadsheet_import_rollback",
+        details=f"Deleted {count} newly-created Excel/CSV tenders from Nov 27 import window; existing tender rows retained.",
+    ))
+    db.commit()
+    return _redirect(
+        f"Removed {count} newly imported tenders. Existing tender records were retained.",
+        "/admin/imports",
+    )
 
 
 @router.post("/imports")
