@@ -398,6 +398,27 @@ def collect_source(source: Source, fetcher: HttpFetcher) -> SourceCollectionResu
         else:
             parsed = parse_generic(soup, result.final_url, source)
 
+        # Public Bolpatra Nepal uses a client-rendered notice listing. When the
+        # ordinary HTML parser finds no cards, record a small, public-page-only
+        # diagnostic so the next adapter iteration can use the site's actual
+        # embedded data shape rather than guessing endpoints or bypassing access.
+        if source.slug == "bolpatranepal-com" and not parsed:
+            script_sources = [item.get("src", "")[:300] for item in soup.select("script[src]")[:20]]
+            embedded = []
+            for item in soup.select('script[type="application/ld+json"], script#__NEXT_DATA__, script[type="application/json"]')[:8]:
+                value = normalise_space(item.get_text(" ", strip=True))
+                if value:
+                    embedded.append(value[:700])
+            log.info(
+                "Bolpatra public listing diagnostic: status=%s title=%r scripts=%s "
+                "embedded=%s visible_text=%r",
+                result.status_code,
+                normalise_space(soup.title.get_text(" ", strip=True) if soup.title else "")[:200],
+                script_sources,
+                embedded,
+                normalise_space(soup.get_text(" ", strip=True))[:1200],
+            )
+
         for candidate in parsed:
             key = candidate.url if candidate.url else f"{candidate.title}|{candidate.organization_name}"
             if key in seen:
