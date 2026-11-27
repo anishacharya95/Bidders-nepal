@@ -51,6 +51,10 @@ def _cell_date(value: Any) -> datetime | None:
     raw = str(value).strip()
     if not raw:
         return None
+    # The Bolpatra export includes Bikram Sambat dates as display text.
+    # Keep those fields blank rather than rejecting the entire tender row.
+    if re.search(r"\\bBS\\b", raw, flags=re.IGNORECASE):
+        return None
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
