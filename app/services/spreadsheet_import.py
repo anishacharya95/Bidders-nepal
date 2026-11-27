@@ -16,8 +16,8 @@ from app.services.classification import apply_classification
 
 MAX_ROWS = 10000
 ALIASES = {
-    "title": {"title", "tender title", "notice title", "project title", "project name", "project work title", "project/work title", "name of project", "work name", "procurement title", "description of procurement"},
-    "organization_name": {"organization_name", "organization", "organization name", "organization / procuring entity", "organization/procuring entity", "procuring entity", "procuring entity name", "procuring public entity", "public entity", "public entity name", "procuring agency", "purchaser", "employer", "office", "agency", "buyer"},
+    "title": {"title", "tender title", "notice title", "project title", "project / public entity", "project/public entity", "project name", "project work title", "project/work title", "name of project", "work name", "procurement title", "description of procurement"},
+    "organization_name": {"organization_name", "organization", "organization name", "organization / procuring entity", "organization/procuring entity", "procuring entity", "procuring entity name", "procuring public entity", "public entity", "public entity name", "procuring agency", "purchaser", "employer", "office", "agency", "buyer", "location"},
     "notice_number": {"notice_number", "notice no", "notice number", "ifb no", "ifb number", "ifb/reoi/eoi/pq no", "bid number", "contract no", "contract number", "reference no", "reference number"},
     "category": {"category", "procurement category", "type"},
     "province": {"province", "state"},
@@ -30,7 +30,7 @@ ALIASES = {
     "estimated_budget_npr": {"estimated budget", "estimated amount", "cost estimate", "estimated cost", "budget npr"},
     "bid_security_npr": {"bid security", "bid security amount"},
     "source_name": {"source", "source name", "publisher"},
-    "source_url": {"source url", "notice url", "tender url", "link", "url"},
+    "source_url": {"source url", "notice url", "tender url", "project link", "link", "url"},
     "document_url": {"document url", "bid document url", "download url", "document link", "bid document"},
     "contact_info": {"contact", "contact info", "email", "phone"},
     "eligibility": {"eligibility", "eligible bidders"},
@@ -56,6 +56,7 @@ def _cell_date(value: Any) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except ValueError:
         pass
+    raw = re.sub(r"\s+AD$", "", raw, flags=re.IGNORECASE).strip()
     for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y"):
         try:
             return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
