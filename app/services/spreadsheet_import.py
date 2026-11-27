@@ -16,9 +16,9 @@ from app.services.classification import apply_classification
 
 MAX_ROWS = 10000
 ALIASES = {
-    "title": {"title", "tender title", "notice title", "project title", "name", "description of procurement"},
-    "organization_name": {"organization_name", "organization", "procuring entity", "public entity", "office", "agency", "buyer"},
-    "notice_number": {"notice_number", "notice no", "notice number", "ifb no", "bid number", "reference no", "reference number"},
+    "title": {"title", "tender title", "notice title", "project title", "project name", "project work title", "project/work title", "name of project", "work name", "procurement title", "description of procurement"},
+    "organization_name": {"organization_name", "organization", "organization name", "organization / procuring entity", "organization/procuring entity", "procuring entity", "procuring entity name", "procuring public entity", "public entity", "public entity name", "procuring agency", "purchaser", "employer", "office", "agency", "buyer"},
+    "notice_number": {"notice_number", "notice no", "notice number", "ifb no", "ifb number", "ifb/reoi/eoi/pq no", "bid number", "contract no", "contract number", "reference no", "reference number"},
     "category": {"category", "procurement category", "type"},
     "province": {"province", "state"},
     "district": {"district"},
@@ -86,12 +86,20 @@ def parse_spreadsheet(raw: bytes, filename: str) -> list[dict]:
         raise ValueError("Please upload an .xlsx or .csv file.")
     if not rows:
         raise ValueError("The spreadsheet is empty.")
-    headers = [_key(value) for value in rows[0]]
-    mapped = [LOOKUP.get(header) for header in headers]
-    if "title" not in mapped or "organization_name" not in mapped:
-        raise ValueError("The file must include a tender title and an organization/procuring entity column.")
+    # Bolpatra exports may have a report title or blank rows above the headers.
+    header_index = None
+    mapped = []
+    for candidate_index, candidate in enumerate(rows[:10]):
+        candidate_headers = [_key(value) for value in candidate]
+        candidate_mapping = [LOOKUP.get(header) for header in candidate_headers]
+        if "title" in candidate_mapping and "organization_name" in candidate_mapping:
+            header_index = candidate_index
+            mapped = candidate_mapping
+            break
+    if header_index is None:
+        raise ValueError("Could not identify the header row. Include Project/Work Title and Procuring Entity/Public Entity (or Tender Title and Organization).")
     result = []
-    for line_number, cells in enumerate(rows[1:], start=2):
+    for line_number, cells in enumerate(rows[header_index + 1:], start=header_index + 2):
         if not any(value not in (None, "") for value in cells):
             continue
         item = {}
