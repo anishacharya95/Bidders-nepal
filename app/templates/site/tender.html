@@ -86,18 +86,27 @@
           {% for doc in documents %}
           <li>
             <div class="doc-main">
-              <a href="{{ doc.url }}" target="_blank" rel="noopener noreferrer nofollow">{{ doc.label }}</a>
+              <strong>{{ doc.label }}</strong>
               <span class="doc-meta">
                 {{ doc.document_type | replace('_', ' ') }}
                 {% if doc.file_format %} · {{ doc.file_format }}{% endif %}
                 {% if doc.file_size_bytes %} · {{ (doc.file_size_bytes / 1024) | round | int }} KB{% endif %}
               </span>
+              <div class="doc-actions">
+                {% if doc.download_status not in ['restricted', 'missing'] %}
+                  {% if (doc.file_format or '') | upper == 'PDF' %}
+                  <a class="btn small" href="/api/v1/documents/{{ doc.id }}/viewer" target="_blank" rel="noopener">Preview on Bidders Nepal</a>
+                  {% endif %}
+                  <a class="btn small ghost" href="/api/v1/documents/{{ doc.id }}/download">Download</a>
+                {% endif %}
+                <a class="btn small ghost" href="{{ doc.url }}" target="_blank" rel="noopener noreferrer nofollow">Original source ↗</a>
+              </div>
             </div>
             <span class="doc-status doc-{{ doc.download_status }}">{{ (doc.download_status or 'unverified') | replace('_', ' ') }}</span>
           </li>
           {% endfor %}
         </ul>
-        <p class="hint">Files are served by the original government host. A link marked “restricted” or “missing” may require a bidder login or may have been removed.</p>
+        <p class="hint">Publicly accessible files can be previewed or downloaded through Bidders Nepal. Login-required, restricted or removed files remain linked to their original source; access is not bypassed.</p>
         {% else %}
         <p class="muted-box">No public attachment was found on the notice page. Some agencies publish bid documents only through the e-GP portal after registration.</p>
         {% endif %}
