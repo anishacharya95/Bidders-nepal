@@ -515,6 +515,65 @@ def run_collection(
                 )
                 log.warning("Collection failed for %s: %s", source.name if source else "?", message)
 
+        # Revisit older imported tenders that have a public source page but no
+        # registered attachments. This is a separate rotating batch so records
+        # that no longer appear on current listing pages still get a chance to
+        # acquire documents when their public detail page contains them.
+        backfill_budget = min(8, max(0, settings.collector_detail_fetch_limit))
+        if backfill_budget and time.monotonic() - started_monotonic < settings.collector_run_budget_seconds:
+            missing_query = db.query(Tender).filter(
+                Tender.source_url.isnot(None),
+                Tender.source_url != "",
+                ~Tender.documents.any(),
+            )
+            missing_count = missing_query.count()
+            if missing_count:
+                offset = ((run.id - 1) * backfill_budget) % missing_count
+                backlog = (
+                    missing_query.order_by(Tender.id.asc())
+                    .offset(offset)
+                    .limit(backfill_budget)
+                    .all()
+                )
+                for existing in backlog:
+                    if time.monotonic() - started_monotonic > settings.collector_run_budget_seconds:
+                        break
+                    if not existing.source_url or not fetcher.permitted(existing.source_url):
+                        continue
+                    candidate = Candidate(
+                        title=existing.title,
+                        url=existing.source_url,
+                        organization_name=existing.organization_name,
+                        notice_number=existing.notice_number,
+                        description=existing.description,
+                        deadline=existing.deadline,
+                        documents=[],
+                    )
+                    try:
+                        candidate = enrich_candidate(candidate, fetcher)
+                        if not candidate.documents:
+                            continue
+                        document_rows = _document_rows(
+                            candidate.documents,
+                            existing.source_url,
+                            fetcher,
+                            [0],
+                        )
+                        added = _merge_documents(existing, document_rows, db)
+                        if added:
+                            totals["documents_found"] += added
+                            if not existing.document_url:
+                                existing.document_url = document_rows[0].url
+                            db.commit()
+                    except Exception:
+                        db.rollback()
+                        log.warning(
+                            "Existing tender document backfill failed for tender %s (%s)",
+                            existing.id,
+                            existing.source_url,
+                            exc_info=True,
+                        )
+
         closed = close_expired_tenders(db)
         # New records make cached stats/facets stale.
         cache.invalidate()
