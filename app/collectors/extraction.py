@@ -63,6 +63,7 @@ APPROVED_EXTRA_HOSTS = {
     "nea.org.np",
     "caanepal.gov.np",
     "bolpatra.gov.np",
+    "bolpatranepal.com",
     "ppmo.gov.np",
     "mofaga.gov.np",
     "nepal.gov.np",
