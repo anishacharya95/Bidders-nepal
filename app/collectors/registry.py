@@ -184,10 +184,15 @@ CENTRAL_SOURCES: tuple[SourceSpec, ...] = (
     SourceSpec(
         "bolpatranepal-com", "Bolpatra Nepal (third-party portal)", "बोलपत्र नेपाल",
         "Bolpatra Nepal (third-party)", "third_party", "central",
-        None, None, "https://bolpatranepal.com/", None,
-        "manual", 4, discovery_status="requires_authorization",
-        requires_authorization=True, active=False,
-        notes="Independent commercial portal, not a government publisher. Collection requires written permission.",
+        None, None, "https://bolpatranepal.com/", "https://bolpatranepal.com/notices/new",
+        "generic_html", 2, discovery_status="discovered",
+        requires_authorization=False, active=True,
+        notes=(
+            "Public notice listing only. Fetcher must obey robots.txt and site access rules; "
+            "do not access bidder accounts, paid/exclusive notices, or restricted documents. "
+            "If public listing access is disallowed or permission is required, keep source inaccessible "
+            "until publisher authorization is obtained."
+        ),
     ),
 )
 
@@ -279,7 +284,7 @@ def sync_registry(db: Session) -> dict:
         # inactive/manual. Keep this narrowly scoped migration so existing
         # production rows receive the verified public listing URL and shared
         # collector configuration without changing admin-managed source URLs.
-        if spec.slug == "bolpatra-egp":
+        if spec.slug in {"bolpatra-egp", "bolpatranepal-com"}:
             current.name = spec.name
             current.organization_name = spec.organization_name
             current.official_website = spec.website
