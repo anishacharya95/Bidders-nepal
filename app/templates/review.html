@@ -10,6 +10,22 @@
   </form>
 </div>
 
+{% if status == 'pending' and total > 0 %}
+<section class="card" style="margin-bottom:16px">
+  <div class="page-head" style="margin:0">
+    <div>
+      <strong>Bulk approval</strong>
+      <p class="muted small">Approve all {{ total }} pending tenders across every review page, not just the rows currently shown.</p>
+    </div>
+    <form method="post" action="/admin/tenders/approve-all" onsubmit="return confirm('Approve ALL {{ total }} pending tenders? This marks every pending tender as verified. Only proceed after checking their source notices.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="confirm" value="APPROVE_ALL_PENDING">
+      <button class="btn primary" type="submit">Approve all {{ total }} pending tenders</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
 <section class="card">
   <div class="table-wrap">
     <table>
